@@ -6,5 +6,12 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod config;
+pub mod engine;
+pub mod hid;
+
+#[cfg(test)]
+mod testutil;
 
 pub use config::*;
+pub use engine::{Engine, Event, Instant, Output};
+pub use hid::{HidState, KeyboardReport};

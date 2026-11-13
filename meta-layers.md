@@ -30,11 +30,13 @@ Fallthrough passes down actions only. An inherited layer key resolves to nothing
 
 ## State model
 
-The runtime state is a stack of entries: `(physical key, layer entered, held | released)`.
+The runtime state is a stack of the currently held layer keys, each entry being `(physical key, layer entered)`.
 
 - **Press a layer key:** push an entry. The current layer becomes that entry's layer.
-- **Release a layer key:** mark its entry as released, then pop released entries from the top until the top entry is held or the stack is empty.
+- **Release a layer key:** remove its entry from wherever it sits in the stack.
 - **Current layer:** the layer of the top entry, or layer 0 if the stack is empty.
+
+(An earlier formulation kept released entries in place and popped them lazily. It behaves identically, but released entries could pile up with cyclic configs, so they are removed immediately.)
 
 Consequences (with m1 → L1, then m3 → L3 from L1):
 

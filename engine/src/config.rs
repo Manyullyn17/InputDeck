@@ -15,7 +15,7 @@ pub const BUTTON_COUNT: usize = KEY_COUNT + 1;
 /// A physical button. Indices 0..=11 are the keys (row-major, top-left
 /// first); [`Button::ENCODER`] is the encoder push button.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Button(u8);
+pub struct Button(pub(crate) u8);
 
 impl Button {
     pub const ENCODER: Button = Button(KEY_COUNT as u8);
@@ -270,39 +270,7 @@ impl<'a> Config<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn k(i: u8) -> Button {
-        Button::key(i).unwrap()
-    }
-
-    fn key(code: u8) -> KeyBinding {
-        KeyBinding::Action(Action::Key { code: KeyCode(code), mods: Modifiers::NONE })
-    }
-
-    const M1: u8 = 0;
-    const M2: u8 = 1;
-
-    /// The example from the design discussion: m1 -> L1, m2 -> L2,
-    /// on L1 the m2 key becomes m3 -> L3, on L2 the m1 key becomes m4 -> L4.
-    fn example() -> Vec<Layer> {
-        let mut base = Layer::empty();
-        base.set(k(M1), KeyBinding::Layer(LayerId(1)))
-            .set(k(M2), KeyBinding::Layer(LayerId(2)));
-        for i in 2..12 {
-            base.set(k(i), key(0x04 + i)); // letters
-        }
-
-        let mut l1 = Layer::transparent(LayerId(0));
-        l1.set(k(M2), KeyBinding::Layer(LayerId(3))).set(k(5), key(0x3A)); // F1
-
-        let mut l2 = Layer::transparent(LayerId(0));
-        l2.set(k(M1), KeyBinding::Layer(LayerId(4)));
-
-        let l3 = Layer::transparent(LayerId(1));
-        let l4 = Layer::transparent(LayerId(2));
-
-        vec![base, l1, l2, l3, l4]
-    }
+    use crate::testutil::*;
 
     #[test]
     fn example_is_valid() {
