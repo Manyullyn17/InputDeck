@@ -1,6 +1,7 @@
 //! mpcfg: Macropad OS config tool.
 
 mod device;
+mod to_toml;
 mod toml_config;
 
 use std::fs;
@@ -35,9 +36,9 @@ enum Command {
     },
     /// Show the connected device's versions and stored config.
     Info,
-    /// Upload a config (.toml, or an encoded .bin). The device reboots to apply it.
+    /// Upload a config (.toml, or an encoded .bin). The device applies it right away.
     Upload { file: PathBuf },
-    /// Download the device's stored config in binary form.
+    /// Download the device's stored config (.toml output is readable, anything else is binary).
     Pull {
         #[arg(short, long)]
         output: PathBuf,
@@ -110,12 +111,19 @@ fn main() -> Result<()> {
                 info.format_version
             );
             dev.put_config(&bytes)?;
-            println!("uploaded {} bytes; the device is rebooting with the new config", bytes.len());
+            println!("uploaded {} bytes; the device is using the new config", bytes.len());
         }
         Command::Pull { output } => {
             let bytes = Device::open(port)?.get_config()?;
-            fs::write(&output, &bytes).with_context(|| format!("writing {}", output.display()))?;
-            println!("wrote {} ({} bytes)", output.display(), bytes.len());
+            if output.extension().is_some_and(|e| e == "toml") {
+                let bundle = codec::decode(&bytes).map_err(|e| anyhow::anyhow!("stored config: {e:?}"))?;
+                let config = bundle.active_config().expect("decode checks the active profile");
+                fs::write(&output, to_toml::write(config)).with_context(|| format!("writing {}", output.display()))?;
+                println!("wrote {}", output.display());
+            } else {
+                fs::write(&output, &bytes).with_context(|| format!("writing {}", output.display()))?;
+                println!("wrote {} ({} bytes)", output.display(), bytes.len());
+            }
         }
         Command::Bootloader => {
             Device::open(port)?.bootloader()?;

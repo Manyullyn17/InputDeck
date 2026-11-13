@@ -158,6 +158,7 @@ pub struct Snapshot {
     pub path: Vec<LayerId, BUTTON_COUNT>,
     /// Keys drawn inverted: held, toggled on, or running a macro.
     pub held: [bool; BUTTON_COUNT],
+    pub caps_lock: bool,
 }
 
 const HEADER_HEIGHT: i32 = 11;
@@ -187,6 +188,14 @@ pub fn render(fb: &mut Framebuffer, config: &Config, snap: &Snapshot) {
         write_layer_name(&mut header, config, layer);
     }
     let _ = Text::with_baseline(&header, Point::new(1, 0), on, Baseline::Top).draw(fb);
+    if snap.caps_lock {
+        // Right-aligned; covers the end of a long layer path.
+        let x = WIDTH as i32 - 4 * 6 - 1;
+        let _ = Rectangle::new(Point::new(x - 2, 0), Size::new(4 * 6 + 3, HEADER_HEIGHT as u32 - 2))
+            .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+            .draw(fb);
+        let _ = Text::with_baseline("CAPS", Point::new(x, 0), off, Baseline::Top).draw(fb);
+    }
     let _ = Line::new(Point::new(0, HEADER_HEIGHT - 2), Point::new(WIDTH as i32 - 1, HEADER_HEIGHT - 2))
         .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
         .draw(fb);

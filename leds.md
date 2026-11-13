@@ -37,13 +37,16 @@ A held key shows the binding it was pressed with, colored as on the layer it was
 
 Applies to LEDs and OLED. After `dim_after_s` (default 60 s), LEDs drop to a quarter of their brightness and the OLED to low contrast. After `off_after_s` (default 10 min), both turn off. 0 disables a stage. Any input wakes the device; the waking input still performs its action.
 
+## Lock indicators
+
+`[indicators]` assigns keys to Caps/Num/Scroll Lock. While the computer reports the lock as on, the key shows the indicator color instead of its normal one. The OLED header shows `CAPS` while Caps Lock is on, independent of indicators.
+
 ## Hardware limits (firmware, not configurable)
 
 Estimated LED current is capped at 300 mA by scaling all LEDs down uniformly.
 
 ## Later
 
-- Caps/Num Lock indicator on a configurable key (from the host's HID LED report).
 - Short flash on layer change.
 - Host-driven colors via the desktop app protocol.
 - Effects (breathing, etc.); `Color` can grow an effect variant.

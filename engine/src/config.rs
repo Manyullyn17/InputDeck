@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 use crate::layout::{self, KeyboardLayout};
-use crate::led::{KeyColor, LedSettings, Palette};
+use crate::led::{KeyColor, LedSettings, Palette, Rgb};
 
 /// Number of mechanical keys.
 pub const KEY_COUNT: usize = 12;
@@ -257,6 +257,31 @@ pub struct Config {
     pub timing: MacroTiming,
     /// The computer's keyboard layout, for typing text.
     pub layout: KeyboardLayout,
+    /// Keys that light up while a host lock (Caps Lock, ...) is on.
+    pub indicators: Vec<Indicator>,
+}
+
+/// Lock state LEDs the computer reports to keyboards (bit positions in the
+/// HID LED report).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HostLed {
+    NumLock = 0,
+    CapsLock = 1,
+    ScrollLock = 2,
+}
+
+impl HostLed {
+    pub fn is_on(self, host_leds: u8) -> bool {
+        host_leds & (1 << self as u8) != 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Indicator {
+    pub led: HostLed,
+    /// A key (not the encoder button, which has no LED).
+    pub button: Button,
+    pub color: Rgb,
 }
 
 /// Inactivity timeouts for LEDs and OLED, in seconds. 0 disables a stage.
@@ -294,6 +319,8 @@ pub enum ConfigError {
     UnknownMacro { layer: LayerId, button: Button, target: MacroId },
     /// A text step contains a character the keyboard layout can't type.
     UntypeableChar { macro_id: MacroId, ch: char },
+    /// An indicator on a button without an LED.
+    BadIndicator,
 }
 
 impl Config {
@@ -306,6 +333,7 @@ impl Config {
             macros: Vec::new(),
             timing: MacroTiming::DEFAULT,
             layout: KeyboardLayout::Us,
+            indicators: Vec::new(),
         }
     }
 
@@ -401,6 +429,9 @@ impl Config {
         }
         if self.macros.len() > u8::MAX as usize + 1 {
             return Err(ConfigError::TooManyMacros);
+        }
+        if self.indicators.iter().any(|ind| ind.button.index() >= KEY_COUNT) {
+            return Err(ConfigError::BadIndicator);
         }
         for (i, m) in self.macros.iter().enumerate() {
             for step in &m.steps {

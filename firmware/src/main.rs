@@ -3,7 +3,7 @@
 //! Scans keys and encoder, runs the shared engine with the config stored in
 //! flash (or a built-in demo if none is stored), sends USB HID keyboard and
 //! media reports, drives the OLED and key LEDs, and offers a USB serial
-//! port for config tools (`mpcfg`).
+//! port for config tools (`mpcfg`). Uploaded configs apply immediately.
 //! The red LED is lit whenever a layer other than the base layer is active.
 //! Holding the knob plus keys 10 and 12 reboots into the UF2 bootloader.
 
@@ -35,8 +35,11 @@ use embassy_usb::Builder;
 use embassy_usb::class::hid::{self, HidBootProtocol, HidSubclass, HidWriter};
 use heapless::Vec;
 use macropad_engine::led::{self, Rgb};
+use core::cell::RefCell;
+
 use macropad_engine::{
-    BUTTON_COUNT, Config, Engine, Event, HidState, Instant, KEY_COUNT, KeyLight, LayerId, NKRO_REPORT_LEN, Output,
+    BUTTON_COUNT, Config, Engine, Event, HidState, HostLed, Instant, KEY_COUNT, KeyLight, LayerId, NKRO_REPORT_LEN,
+    Output,
 };
 use smart_leds::RGB8;
 use panic_halt as _;
@@ -76,7 +79,7 @@ fn phase(config: &Config, idle_ms: u64) -> Phase {
 /// Final LED output: config colors, then brightness (reduced when dimmed),
 /// gamma, and the current cap.
 fn led_frame(config: &Config, engine: &Engine, phase: Phase) -> [RGB8; KEY_COUNT] {
-    let mut colors = led::key_colors(config, engine);
+    let mut colors = led::key_colors(config, engine, keyboard::host_leds());
     let brightness = match phase {
         Phase::Active => config.leds.brightness,
         Phase::Dim => config.leds.brightness / 4,
@@ -96,7 +99,8 @@ fn snapshot(engine: &Engine, phase: Phase) -> Snapshot {
             KeyLight::Held { .. } | KeyLight::Active { .. } | KeyLight::Running { .. }
         );
     }
-    Snapshot { phase, layer: engine.layer(), path: engine.layer_path().collect(), held }
+    let caps_lock = HostLed::CapsLock.is_on(keyboard::host_leds());
+    Snapshot { phase, layer: engine.layer(), path: engine.layer_path().collect(), held, caps_lock }
 }
 
 #[embassy_executor::main]
@@ -204,16 +208,20 @@ async fn main(_spawner: Spawner) {
 
     // ---- Config ----
     let mut store = storage::Storage::new(Flash::new_blocking(p.FLASH));
-    let config = store.load().unwrap_or_else(|| Config::new(demo::layers().into()));
+    // Shared by all loops. Borrows are never held across an await; uploads
+    // arrive through `new_config` and are swapped in by the input loop.
+    let config = RefCell::new(store.load().unwrap_or_else(|| Config::new(demo::layers().into())));
+    let new_config: Signal<NoopRawMutex, Config> = Signal::new();
 
-    let serial_loop = serial::run(&mut serial_port, &mut store);
+    let serial_loop = serial::run(&mut serial_port, &mut store, &new_config);
 
     // Latest state for display and LEDs; newer values overwrite unread ones.
     let screen: Signal<NoopRawMutex, Snapshot> = Signal::new();
     let lights: Signal<NoopRawMutex, [RGB8; KEY_COUNT]> = Signal::new();
 
     let led_loop = async {
-        key_leds.write(&led_frame(&config, &Engine::new(), Phase::Active)).await;
+        let first = led_frame(&config.borrow(), &Engine::new(), Phase::Active);
+        key_leds.write(&first).await;
         loop {
             key_leds.write(&lights.wait().await).await;
         }
@@ -222,7 +230,7 @@ async fn main(_spawner: Spawner) {
     let display_loop = async {
         let mut oled = Sh1106::new(oled_spi, oled_dc, oled_cs, oled_reset).await;
         let mut fb = Framebuffer::new();
-        display::render(&mut fb, &config, &snapshot(&Engine::new(), Phase::Active));
+        display::render(&mut fb, &config.borrow(), &snapshot(&Engine::new(), Phase::Active));
         oled.flush(&fb).await;
         oled.set_contrast(CONTRAST_ACTIVE).await;
         oled.on().await;
@@ -230,7 +238,7 @@ async fn main(_spawner: Spawner) {
         loop {
             let snap = screen.wait().await;
             if snap.phase != Phase::Off {
-                display::render(&mut fb, &config, &snap);
+                display::render(&mut fb, &config.borrow(), &snap);
                 oled.flush(&fb).await;
             }
             if snap.phase != shown {
@@ -258,6 +266,7 @@ async fn main(_spawner: Spawner) {
         let mut ticker = Ticker::every(Duration::from_millis(1));
         let mut last_activity = embassy_time::Instant::now();
         let mut current_phase = Phase::Active;
+        let mut host_leds = keyboard::host_leds();
 
         loop {
             ticker.next().await;
@@ -275,22 +284,37 @@ async fn main(_spawner: Spawner) {
             }
 
             let mut screen_dirty = false;
-            if !events.is_empty() {
-                last_activity = embassy_time::Instant::now();
-            }
-            // Any input wakes the device; the waking input is not swallowed.
-            let new_phase = phase(&config, last_activity.elapsed().as_millis());
-            if new_phase != current_phase {
-                current_phase = new_phase;
-                screen_dirty = true;
-            }
             // Heap-allocated so a burst of outputs can't be truncated
             // (a dropped release would leave a key stuck).
             let mut outputs: alloc::vec::Vec<Output> = alloc::vec::Vec::new();
-            screen_dirty |= engine.tick(&config, now, &mut |o| outputs.push(o));
-            for event in events {
-                screen_dirty |= matches!(event, Event::Press(_) | Event::Release(_));
-                engine.handle(&config, event, now, &mut |o| outputs.push(o));
+
+            // A newly uploaded config: release everything, then swap.
+            if let Some(next) = new_config.try_take() {
+                engine.reset(&mut |o| outputs.push(o));
+                *config.borrow_mut() = next;
+                screen_dirty = true;
+            }
+            let leds_now = keyboard::host_leds();
+            if leds_now != host_leds {
+                host_leds = leds_now;
+                screen_dirty = true;
+            }
+            if !events.is_empty() {
+                last_activity = embassy_time::Instant::now();
+            }
+            {
+                let config = config.borrow();
+                // Any input wakes the device; the waking input is not swallowed.
+                let new_phase = phase(&config, last_activity.elapsed().as_millis());
+                if new_phase != current_phase {
+                    current_phase = new_phase;
+                    screen_dirty = true;
+                }
+                screen_dirty |= engine.tick(&config, now, &mut |o| outputs.push(o));
+                for event in events {
+                    screen_dirty |= matches!(event, Event::Press(_) | Event::Release(_));
+                    engine.handle(&config, event, now, &mut |o| outputs.push(o));
+                }
             }
 
             for output in outputs {
@@ -320,7 +344,7 @@ async fn main(_spawner: Spawner) {
             }
             if screen_dirty {
                 screen.signal(snapshot(&engine, current_phase));
-                lights.signal(led_frame(&config, &engine, current_phase));
+                lights.signal(led_frame(&config.borrow(), &engine, current_phase));
             }
         }
     };

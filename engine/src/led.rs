@@ -166,7 +166,7 @@ impl LedSettings {
     pub const DEFAULT: LedSettings = LedSettings {
         enabled: true,
         brightness: 160,
-        idle_level: 110,
+        idle_level: 112, // 44%, exactly representable as a whole percent
         held_style: HeldStyle::Brighten,
         palette: Palette::DEFAULT,
     };
@@ -176,7 +176,9 @@ impl LedSettings {
 const PATH_ANCHOR_LEVEL: u8 = 70;
 
 /// Perceptual colors for all keys (before brightness and gamma).
-pub fn key_colors(config: &Config, engine: &Engine) -> [Rgb; KEY_COUNT] {
+/// `host_leds` is the lock state reported by the computer; configured
+/// indicators replace their key's color while their lock is on.
+pub fn key_colors(config: &Config, engine: &Engine, host_leds: u8) -> [Rgb; KEY_COUNT] {
     let mut colors = [Rgb::BLACK; KEY_COUNT];
     if !config.leds.enabled {
         return colors;
@@ -191,6 +193,13 @@ pub fn key_colors(config: &Config, engine: &Engine) -> [Rgb; KEY_COUNT] {
                 .scale(config.leds.idle_level)
                 .scale(PATH_ANCHOR_LEVEL),
         };
+    }
+    for ind in &config.indicators {
+        if ind.led.is_on(host_leds)
+            && let Some(c) = colors.get_mut(ind.button.index())
+        {
+            *c = ind.color;
+        }
     }
     colors
 }
@@ -311,7 +320,7 @@ mod tests {
     fn categories_use_global_palette() {
         let layers = example();
         let c = Config::new(layers.clone());
-        let colors = key_colors(&c, &Engine::new());
+        let colors = key_colors(&c, &Engine::new(), 0);
         let p = Palette::DEFAULT;
         assert_eq!(colors[M1 as usize], idle(p.layer_key, &c));
         assert_eq!(colors[4], idle(p.key, &c));
@@ -322,9 +331,9 @@ mod tests {
         let mut layers = example();
         layers[0].set(k(4), crate::config::KeyBinding::None);
         let mut c = Config::new(layers.clone());
-        assert_eq!(key_colors(&c, &Engine::new())[4], Rgb::BLACK);
+        assert_eq!(key_colors(&c, &Engine::new(), 0)[4], Rgb::BLACK);
         c.leds.enabled = false;
-        assert!(key_colors(&c, &Engine::new()).iter().all(|&x| x == Rgb::BLACK));
+        assert!(key_colors(&c, &Engine::new(), 0).iter().all(|&x| x == Rgb::BLACK));
     }
 
     #[test]
@@ -336,7 +345,7 @@ mod tests {
         press(&mut e, &c, M1);
         press(&mut e, &c, M2); // L3, parent L1
         // Key 4 is inherited from L0 but colored by L3's palette chain (L1).
-        assert_eq!(key_colors(&c, &e)[4], idle(Color::Rgb(TEAL), &c));
+        assert_eq!(key_colors(&c, &e, 0)[4], idle(Color::Rgb(TEAL), &c));
     }
 
     #[test]
@@ -346,7 +355,7 @@ mod tests {
         let c = Config::new(layers.clone());
         let mut e = Engine::new();
         press(&mut e, &c, M1); // L1 inherits key 4 from L0
-        assert_eq!(key_colors(&c, &e)[4], idle(Color::Rgb(RED), &c));
+        assert_eq!(key_colors(&c, &e, 0)[4], idle(Color::Rgb(RED), &c));
     }
 
     #[test]
@@ -355,7 +364,7 @@ mod tests {
         let c = Config::new(layers.clone());
         let mut e = Engine::new();
         press(&mut e, &c, M1);
-        let colors = key_colors(&c, &e);
+        let colors = key_colors(&c, &e, 0);
         // Brighten: full-level layer key color, although m1 is unbound on L1.
         assert_eq!(colors[M1 as usize], Rgb::new(0, 90, 255));
     }
@@ -368,9 +377,9 @@ mod tests {
         let mut e = Engine::new();
         press(&mut e, &c, 4);
         press(&mut e, &c, 5);
-        assert_eq!(key_colors(&c, &e)[4], RED);
+        assert_eq!(key_colors(&c, &e, 0)[4], RED);
         c.leds.held_style = HeldStyle::White;
-        assert_eq!(key_colors(&c, &e)[5], Rgb::WHITE);
+        assert_eq!(key_colors(&c, &e, 0)[5], Rgb::WHITE);
     }
 
     #[test]
@@ -382,7 +391,22 @@ mod tests {
         press(&mut e, &c, M2);
         release(&mut e, &c, M1);
         let expected = Rgb::new(0, 90, 255).scale(c.leds.idle_level).scale(PATH_ANCHOR_LEVEL);
-        assert_eq!(key_colors(&c, &e)[M1 as usize], expected);
+        assert_eq!(key_colors(&c, &e, 0)[M1 as usize], expected);
+    }
+
+    #[test]
+    fn indicator_overrides_key_while_lock_is_on() {
+        let layers = example();
+        let mut c = Config::new(layers.clone());
+        c.indicators.push(crate::config::Indicator {
+            led: crate::config::HostLed::CapsLock,
+            button: k(11),
+            color: RED,
+        });
+        let e = Engine::new();
+        assert_ne!(key_colors(&c, &e, 0)[11], RED);
+        assert_eq!(key_colors(&c, &e, 0b010)[11], RED); // caps lock bit
+        assert_ne!(key_colors(&c, &e, 0b001)[11], RED); // num lock only
     }
 
     #[test]

@@ -8,8 +8,8 @@ use alloc::vec::Vec;
 
 /// Returns `PING_MAGIC`, the codec format version and the protocol version.
 pub const CMD_PING: u8 = 0x01;
-/// Payload: an encoded config (see [`crate::codec`]). Saved, then the device
-/// reboots to load it.
+/// Payload: an encoded config (see [`crate::codec`]). Saved and applied
+/// immediately (held keys, toggles and macros are released first).
 pub const CMD_PUT_CONFIG: u8 = 0x02;
 /// Returns the stored encoded config.
 pub const CMD_GET_CONFIG: u8 = 0x03;

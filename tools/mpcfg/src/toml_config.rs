@@ -9,13 +9,15 @@ use macropad_engine::layout::KeyboardLayout;
 use macropad_engine::led::{Color, HeldStyle, KeyColor, LedSettings, Palette};
 use macropad_engine::notation::{parse_action, parse_binding, parse_color, parse_encoder, parse_step};
 use macropad_engine::{
-    Button, Config, ConfigError, IdleSettings, KEY_COUNT, Layer, LayerId, Macro, MacroId, MacroKind, MacroTiming,
-    StopMode,
+    Button, Config, ConfigError, HostLed, IdleSettings, Indicator, KEY_COUNT, Layer, LayerId, Macro, MacroId,
+    MacroKind, MacroTiming, StopMode,
 };
 use serde::Deserialize;
 
 /// Id of the layer that becomes layer 0.
 pub const BASE: &str = "base";
+/// `parent = "none"`: a layer without fallthrough (inherit resolves to nothing).
+pub const NO_PARENT: &str = "none";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -31,9 +33,27 @@ pub struct File {
     /// Layer-independent actions, keyed by key number ("1"-"12") or "encoder".
     #[serde(default)]
     pub global: BTreeMap<String, String>,
+    #[serde(default)]
+    pub indicators: IndicatorsToml,
     pub layers: IndexMap<String, LayerToml>,
     #[serde(default)]
     pub macros: IndexMap<String, MacroToml>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IndicatorsToml {
+    pub caps_lock: Option<IndicatorToml>,
+    pub num_lock: Option<IndicatorToml>,
+    pub scroll_lock: Option<IndicatorToml>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IndicatorToml {
+    /// Key number 1-12.
+    pub key: u8,
+    pub color: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -164,6 +184,7 @@ fn button(name: &str, allow_encoder: bool) -> Result<Button> {
 pub fn compile(file: &File) -> Result<Config> {
     // Layer ids -> indices: base first, then file order.
     ensure!(file.layers.contains_key(BASE), "missing [layers.{BASE}]");
+    ensure!(!file.layers.contains_key(NO_PARENT), "'{NO_PARENT}' is reserved and can't be a layer id");
     let ids: Vec<&str> =
         std::iter::once(BASE).chain(file.layers.keys().map(String::as_str).filter(|&id| id != BASE)).collect();
     ensure!(ids.len() <= 256, "at most 256 layers are supported");
@@ -198,6 +219,21 @@ pub fn compile(file: &File) -> Result<Config> {
         timing.char_delay_ms = v;
     }
     config.timing = timing;
+
+    let indicators = [
+        (HostLed::CapsLock, &file.indicators.caps_lock, "caps_lock"),
+        (HostLed::NumLock, &file.indicators.num_lock, "num_lock"),
+        (HostLed::ScrollLock, &file.indicators.scroll_lock, "scroll_lock"),
+    ];
+    for (led, ind, what) in indicators {
+        let Some(ind) = ind else { continue };
+        let button = button(&ind.key.to_string(), false).with_context(|| format!("indicators.{what}.key"))?;
+        let color = match parse_color(&ind.color) {
+            Ok(Color::Rgb(rgb)) => rgb,
+            _ => bail!("indicators.{what}.color: '{}' (expected #rrggbb)", ind.color),
+        };
+        config.indicators.push(Indicator { led, button, color });
+    }
 
     for (name, text) in &file.global {
         let b = button(name, true).context("in [global]")?;
@@ -290,6 +326,7 @@ fn compile_layer(
         (Some(_), true) => bail!("the base layer cannot have a parent"),
         (None, true) => None,
         (None, false) => Some(LayerId::BASE),
+        (Some(p), false) if p == NO_PARENT => None,
         (Some(p), false) => Some(index(p).ok_or_else(|| anyhow!("parent '{p}' is not a layer"))?),
     };
     let mut layer = match parent {

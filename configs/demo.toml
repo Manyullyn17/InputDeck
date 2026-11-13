@@ -36,6 +36,10 @@ palette = { layer_key = "#005aff", key = "#ff963c", modified = "#aa00ff", media 
 dim_after = 60      # seconds, 0 = never
 off_after = 600
 
+# Keys that show a color while a lock is on: caps_lock, num_lock, scroll_lock.
+[indicators]
+caps_lock = { key = 12, color = "#ffffff" }
+
 # Layer-independent actions, used wherever a layer leaves the key on "_".
 # Keys are numbered 1-12 from the top-left; "encoder" is the knob button.
 [global]

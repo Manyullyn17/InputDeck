@@ -8,6 +8,9 @@ use embassy_rp::usb::Driver;
 use embassy_time::Timer;
 use embassy_usb::class::cdc_acm::CdcAcmClass;
 use embassy_usb::driver::EndpointError;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::signal::Signal;
+use macropad_engine::Config;
 use macropad_engine::codec::{self, FORMAT_VERSION};
 use macropad_engine::protocol::*;
 
@@ -15,11 +18,17 @@ use crate::storage::{StoreError, Storage};
 
 enum After {
     Nothing,
-    Reboot,
+    Apply(Config),
     Bootloader,
 }
 
-pub async fn run<'d>(class: &mut CdcAcmClass<'d, Driver<'d, USB>>, storage: &mut Storage) -> ! {
+/// Serves config tools. Uploaded configs are stored, then handed to the
+/// input loop through `new_config` to take effect immediately.
+pub async fn run<'d>(
+    class: &mut CdcAcmClass<'d, Driver<'d, USB>>,
+    storage: &mut Storage,
+    new_config: &Signal<NoopRawMutex, Config>,
+) -> ! {
     loop {
         class.wait_connection().await;
         let mut reader = FrameReader::new();
@@ -40,10 +49,7 @@ pub async fn run<'d>(class: &mut CdcAcmClass<'d, Driver<'d, USB>>, storage: &mut
                 }
                 match after {
                     After::Nothing => {}
-                    After::Reboot => {
-                        Timer::after_millis(50).await;
-                        cortex_m::peripheral::SCB::sys_reset();
-                    }
+                    After::Apply(config) => new_config.signal(config),
                     After::Bootloader => {
                         Timer::after_millis(50).await;
                         embassy_rp::rom_data::reset_to_usb_boot(0, 0);
@@ -63,11 +69,13 @@ fn handle(kind: u8, payload: &[u8], storage: &mut Storage) -> (u8, Vec<u8>, Afte
             (STATUS_OK, info, After::Nothing)
         }
         CMD_PUT_CONFIG => {
-            if let Err(e) = codec::decode(payload) {
-                return (STATUS_BAD_CONFIG, format!("{e:?}").into_bytes(), After::Nothing);
-            }
+            let config = match codec::decode(payload).map(|b| b.into_active_config()) {
+                Ok(Some(config)) => config,
+                Ok(None) => return (STATUS_BAD_CONFIG, b"no active profile".to_vec(), After::Nothing),
+                Err(e) => return (STATUS_BAD_CONFIG, format!("{e:?}").into_bytes(), After::Nothing),
+            };
             match storage.save(payload) {
-                Ok(()) => (STATUS_OK, Vec::new(), After::Reboot),
+                Ok(()) => (STATUS_OK, Vec::new(), After::Apply(config)),
                 Err(StoreError::TooLarge) => (STATUS_TOO_LARGE, Vec::new(), After::Nothing),
                 Err(e) => (STATUS_STORAGE_ERROR, format!("{e:?}").into_bytes(), After::Nothing),
             }
