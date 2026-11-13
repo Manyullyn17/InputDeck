@@ -139,6 +139,14 @@ impl Menu {
         config.idle = self.idle;
     }
 
+    /// The item being edited, if any.
+    pub fn editing(&self) -> Option<Item> {
+        match &self.mode {
+            Mode::Edit { item, .. } => Some(*item),
+            _ => None,
+        }
+    }
+
     pub fn profile_name(&self, i: u8) -> String {
         match self.profile_names.get(i as usize) {
             Some(n) if !n.is_empty() => n.clone(),
@@ -386,6 +394,16 @@ mod tests {
         assert!(matches!(m.view(), MenuView::Info { lines } if lines.len() == 1));
         m.handle(cw());
         assert!(matches!(m.view(), MenuView::Grid { selected: 6, .. }));
+    }
+
+    #[test]
+    fn reports_item_being_edited() {
+        let mut m = menu();
+        assert_eq!(m.editing(), None);
+        m.handle(MenuInput::Key(1));
+        assert_eq!(m.editing(), Some(Item::Leds));
+        m.handle(MenuInput::Select);
+        assert_eq!(m.editing(), None);
     }
 
     #[test]

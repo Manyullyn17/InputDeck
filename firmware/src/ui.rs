@@ -8,7 +8,7 @@ use core::cell::RefCell;
 
 use macropad_engine::codec::{self, Bundle, FORMAT_VERSION};
 use macropad_engine::led::{self, Rgb};
-use macropad_engine::menu::{Menu, MenuView, percent_to_level};
+use macropad_engine::menu::{Item, Menu, MenuView, percent_to_level};
 use macropad_engine::{Config, KEY_COUNT};
 use smart_leds::RGB8;
 
@@ -88,11 +88,17 @@ pub fn switch_profile(storage: &RefCell<Storage>, config: &Config, delta: i32) -
     Some((b.into_active_config()?, label))
 }
 
-/// Key LEDs while the menu is open, previewing the edited brightness (with
-/// a floor so the menu stays visible).
+/// Key LEDs while the menu is open. Normally at the edited brightness with
+/// a floor so the menu stays visible; while editing brightness or LEDs
+/// on/off, the real result is shown instead.
 pub fn menu_led_frame(menu: &Menu, max_ma: u32) -> [RGB8; KEY_COUNT] {
     let mut colors = menu.key_colors();
-    led::apply_brightness(&mut colors, menu.leds.brightness.max(percent_to_level(15)));
+    let brightness = match menu.editing() {
+        Some(Item::Leds) if !menu.leds.enabled => 0,
+        Some(Item::Brightness) => menu.leds.brightness,
+        _ => menu.leds.brightness.max(percent_to_level(15)),
+    };
+    led::apply_brightness(&mut colors, brightness);
     led::limit_current(&mut colors, max_ma);
     colors.map(|Rgb { r, g, b }| RGB8 { r, g, b })
 }
