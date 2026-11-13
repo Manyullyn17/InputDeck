@@ -136,6 +136,11 @@
     if (layer && typeof target === "number" && target < 12) report(api.setKeyColor(layer.id, target, slot, color));
   }
 
+  /** Show the file id next to a name only when it isn't just the name in lowercase. */
+  function showId(name: string, id: string): boolean {
+    return !!name && id.replace(/_\d+$/, "") !== makeId(name, "", []);
+  }
+
   function selectLayer(id: string) {
     layerId = id;
     macroId = null;
@@ -223,11 +228,12 @@
             <li>
               <button
                 class="layer"
+                title="id: {l.id}"
                 class:on={!macro && !settingsOpen && l.id === layer?.id}
                 style:padding-left="{10 + depth * 16}px"
                 onclick={() => selectLayer(l.id)}
               >
-                {l.name || l.id}<span class="muted mono"> {l.name ? l.id : ""}</span>
+                {l.name || l.id}{#if showId(l.name, l.id)}<span class="id mono">{l.id}</span>{/if}
               </button>
             </li>
           {/each}
@@ -243,13 +249,14 @@
             <li>
               <button
                 class="layer"
+                title="id: {m.id}"
                 class:on={!settingsOpen && m.id === macroId}
                 onclick={() => {
                   macroId = m.id;
                   settingsOpen = false;
                 }}
               >
-                {m.name || m.id}<span class="muted mono"> {m.name ? m.id : ""}</span>
+                {m.name || m.id}{#if showId(m.name, m.id)}<span class="id mono">{m.id}</span>{/if}
                 {#if !m.used_by.length}<span class="muted" title="Not bound to any key"> ·</span>{/if}
               </button>
             </li>
@@ -469,6 +476,11 @@
   }
   .section {
     margin-top: 18px;
+  }
+  .id {
+    margin-left: 8px;
+    font-size: 11px;
+    color: var(--muted);
   }
   .settings-btn {
     margin-bottom: 4px;
