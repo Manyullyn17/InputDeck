@@ -237,14 +237,14 @@ mod tests {
     use super::*;
     use crate::testutil::*;
 
-    struct Harness<'a> {
-        config: Config<'a>,
+    struct Harness {
+        config: Config,
         engine: Engine,
     }
 
-    impl<'a> Harness<'a> {
-        fn new(layers: &'a [Layer]) -> Self {
-            let config = Config::new(layers);
+    impl Harness {
+        fn new(layers: &[Layer]) -> Self {
+            let config = Config::new(layers.to_vec());
             config.validate().unwrap();
             Harness { config, engine: Engine::new() }
         }

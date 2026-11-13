@@ -9,6 +9,8 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 mod demo;
 mod display;
 mod input;
@@ -34,6 +36,10 @@ use usbd_hid::descriptor::{KeyboardReport, MediaKeyboardReport, SerializedDescri
 
 use display::{Framebuffer, Phase, Sh1106, Snapshot};
 use input::{Debouncer, Encoder};
+
+#[global_allocator]
+static HEAP: embedded_alloc::LlffHeap = embedded_alloc::LlffHeap::empty();
+const HEAP_SIZE: usize = 64 * 1024;
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
@@ -83,6 +89,10 @@ fn snapshot(engine: &Engine, phase: Phase) -> Snapshot {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
+    // SAFETY: called once, before anything allocates.
+    unsafe {
+        embedded_alloc::init!(HEAP, HEAP_SIZE);
+    }
     let p = embassy_rp::init(Default::default());
 
     // ---- USB ----
@@ -171,8 +181,7 @@ async fn main(_spawner: Spawner) {
     let ws2812_program = PioWs2812Program::new(&mut common);
     let mut key_leds = PioWs2812::new(&mut common, sm0, p.DMA_CH1, Irqs, p.PIN_19, &ws2812_program);
 
-    let layers = demo::layers();
-    let config = Config::new(&layers);
+    let config = Config::new(demo::layers().into());
 
     // Latest state for display and LEDs; newer values overwrite unread ones.
     let screen: Signal<NoopRawMutex, Snapshot> = Signal::new();

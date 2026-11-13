@@ -12,10 +12,12 @@
 //! held color), and released layer keys still in the layer path dimmed.
 //! [`apply_brightness`] and [`limit_current`] turn that into LED output.
 
+use serde::{Deserialize, Serialize};
+
 use crate::config::{Action, Button, Config, KEY_COUNT, KeyBinding, LayerId, Source};
 use crate::engine::{Engine, KeyLight};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Rgb {
     pub r: u8,
     pub g: u8,
@@ -44,7 +46,7 @@ impl Rgb {
 }
 
 /// A color setting. `Inherit` defers to the next level of resolution.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Color {
     Inherit,
     Off,
@@ -54,7 +56,7 @@ pub enum Color {
 /// Colors for one key's states. `Inherit` means: idle uses the palette,
 /// held uses the [`HeldStyle`] on the idle color, active uses the held
 /// color.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyColor {
     pub idle: Color,
     pub held: Color,
@@ -67,7 +69,7 @@ impl KeyColor {
 }
 
 /// Kinds of bindings that get their own palette color.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Category {
     LayerKey,
     /// A key without modifiers.
@@ -91,7 +93,7 @@ impl Category {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Palette {
     pub layer_key: Color,
     pub key: Color,
@@ -129,7 +131,7 @@ impl Palette {
 }
 
 /// How a held key without its own held color is shown.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HeldStyle {
     /// The idle color at full level.
     Brighten,
@@ -138,7 +140,7 @@ pub enum HeldStyle {
     Invert,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LedSettings {
     pub enabled: bool,
     /// Overall brightness, perceptual (gamma-corrected), 0-255.
@@ -287,7 +289,7 @@ mod tests {
     #[test]
     fn categories_use_global_palette() {
         let layers = example();
-        let c = Config::new(&layers);
+        let c = Config::new(layers.clone());
         let colors = key_colors(&c, &Engine::new());
         let p = Palette::DEFAULT;
         assert_eq!(colors[M1 as usize], idle(p.layer_key, &c));
@@ -298,7 +300,7 @@ mod tests {
     fn unbound_is_off_and_disabled_is_all_off() {
         let mut layers = example();
         layers[0].set(k(4), crate::config::KeyBinding::None);
-        let mut c = Config::new(&layers);
+        let mut c = Config::new(layers.clone());
         assert_eq!(key_colors(&c, &Engine::new())[4], Rgb::BLACK);
         c.leds.enabled = false;
         assert!(key_colors(&c, &Engine::new()).iter().all(|&x| x == Rgb::BLACK));
@@ -308,7 +310,7 @@ mod tests {
     fn layer_palette_is_inherited_by_child_layers() {
         let mut layers = example();
         layers[1].palette.key = Color::Rgb(TEAL);
-        let c = Config::new(&layers);
+        let c = Config::new(layers.clone());
         let mut e = Engine::new();
         press(&mut e, &c, M1);
         press(&mut e, &c, M2); // L3, parent L1
@@ -320,7 +322,7 @@ mod tests {
     fn key_color_follows_inherited_binding() {
         let mut layers = example();
         layers[0].key_colors[4].idle = Color::Rgb(RED);
-        let c = Config::new(&layers);
+        let c = Config::new(layers.clone());
         let mut e = Engine::new();
         press(&mut e, &c, M1); // L1 inherits key 4 from L0
         assert_eq!(key_colors(&c, &e)[4], idle(Color::Rgb(RED), &c));
@@ -329,7 +331,7 @@ mod tests {
     #[test]
     fn held_layer_key_keeps_its_color_on_the_new_layer() {
         let layers = example();
-        let c = Config::new(&layers);
+        let c = Config::new(layers.clone());
         let mut e = Engine::new();
         press(&mut e, &c, M1);
         let colors = key_colors(&c, &e);
@@ -341,7 +343,7 @@ mod tests {
     fn explicit_held_color_and_held_styles() {
         let mut layers = example();
         layers[0].key_colors[4].held = Color::Rgb(RED);
-        let mut c = Config::new(&layers);
+        let mut c = Config::new(layers.clone());
         let mut e = Engine::new();
         press(&mut e, &c, 4);
         press(&mut e, &c, 5);
@@ -353,7 +355,7 @@ mod tests {
     #[test]
     fn released_ancestor_is_dimmed() {
         let layers = example();
-        let c = Config::new(&layers);
+        let c = Config::new(layers.clone());
         let mut e = Engine::new();
         press(&mut e, &c, M1);
         press(&mut e, &c, M2);

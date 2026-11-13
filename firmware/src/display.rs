@@ -165,6 +165,17 @@ const CELL_WIDTH: i32 = 42;
 const CELL_HEIGHT: i32 = 13;
 const COLUMNS: usize = 3;
 
+fn write_layer_name(out: &mut String<64>, config: &Config, id: LayerId) {
+    match config.layer(id) {
+        Some(layer) if !layer.name.is_empty() => {
+            let _ = out.push_str(&layer.name);
+        }
+        _ => {
+            let _ = write!(out, "L{}", id.0);
+        }
+    }
+}
+
 /// Header: layer path (e.g. "L1>L3"). Below: a 4x3 grid with each key's
 /// effective binding on the current layer; held keys are drawn inverted.
 pub fn render(fb: &mut Framebuffer, config: &Config, snap: &Snapshot) {
@@ -174,10 +185,13 @@ pub fn render(fb: &mut Framebuffer, config: &Config, snap: &Snapshot) {
 
     let mut header: String<64> = String::new();
     if snap.path.is_empty() {
-        let _ = write!(header, "L{}", LayerId::BASE.0);
+        write_layer_name(&mut header, config, LayerId::BASE);
     }
-    for (i, layer) in snap.path.iter().enumerate() {
-        let _ = write!(header, "{}L{}", if i == 0 { "" } else { ">" }, layer.0);
+    for (i, &layer) in snap.path.iter().enumerate() {
+        if i > 0 {
+            let _ = header.push('>');
+        }
+        write_layer_name(&mut header, config, layer);
     }
     let _ = Text::with_baseline(&header, Point::new(1, 0), on, Baseline::Top).draw(fb);
     let _ = Line::new(Point::new(0, HEADER_HEIGHT - 2), Point::new(WIDTH as i32 - 1, HEADER_HEIGHT - 2))

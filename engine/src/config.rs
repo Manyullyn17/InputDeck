@@ -7,6 +7,11 @@
 //! Order-independent combos need no special type: both orderings simply
 //! point at the same target layer.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use serde::{Deserialize, Serialize};
+
 use crate::led::{KeyColor, LedSettings, Palette};
 
 /// Number of mechanical keys.
@@ -16,7 +21,7 @@ pub const BUTTON_COUNT: usize = KEY_COUNT + 1;
 
 /// A physical button. Indices 0..=11 are the keys (row-major, top-left
 /// first); [`Button::ENCODER`] is the encoder push button.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Button(pub(crate) u8);
 
 impl Button {
@@ -37,7 +42,7 @@ impl Button {
 }
 
 /// Index of a layer in [`Config::layers`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct LayerId(pub u8);
 
 impl LayerId {
@@ -45,11 +50,11 @@ impl LayerId {
 }
 
 /// HID keyboard usage ID (e.g. 0x04 = A).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyCode(pub u8);
 
 /// HID modifier bitmask.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Modifiers(pub u8);
 
 impl Modifiers {
@@ -65,7 +70,7 @@ impl Modifiers {
 }
 
 /// Something a button does when pressed (and undoes when released).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
     /// A keyboard key, optionally with modifiers held.
     Key { code: KeyCode, mods: Modifiers },
@@ -74,7 +79,7 @@ pub enum Action {
 }
 
 /// What a button means on a given layer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyBinding {
     /// Does nothing.
     None,
@@ -87,7 +92,7 @@ pub enum KeyBinding {
 }
 
 /// What an encoder rotation step means on a given layer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EncoderBinding {
     None,
     Inherit,
@@ -95,14 +100,16 @@ pub enum EncoderBinding {
     Action(Action),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
     Clockwise,
     CounterClockwise,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Layer {
+    /// Display name (e.g. on the OLED). Empty means "L<index>".
+    pub name: String,
     /// Fixed fallthrough parent for [`KeyBinding::Inherit`]. The base layer
     /// has none; `Inherit` with no parent resolves to nothing.
     pub parent: Option<LayerId>,
@@ -121,6 +128,7 @@ impl Layer {
     /// A layer where everything falls through to `parent`.
     pub const fn transparent(parent: LayerId) -> Self {
         Layer {
+            name: String::new(),
             parent: Some(parent),
             buttons: [KeyBinding::Inherit; BUTTON_COUNT],
             encoder_cw: EncoderBinding::Inherit,
@@ -133,6 +141,7 @@ impl Layer {
     /// A parentless layer where nothing is bound.
     pub const fn empty() -> Self {
         Layer {
+            name: String::new(),
             parent: None,
             buttons: [KeyBinding::None; BUTTON_COUNT],
             encoder_cw: EncoderBinding::None,
@@ -148,9 +157,9 @@ impl Layer {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Config<'a> {
-    pub layers: &'a [Layer],
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Config {
+    pub layers: Vec<Layer>,
     /// Layer-independent buttons: if set, the action applies on every layer
     /// whose own binding for the button is [`KeyBinding::Inherit`]. Any
     /// explicit binding on the current layer (including `None`) wins.
@@ -160,7 +169,7 @@ pub struct Config<'a> {
 }
 
 /// Inactivity timeouts for LEDs and OLED, in seconds. 0 disables a stage.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdleSettings {
     pub dim_after_s: u16,
     pub off_after_s: u16,
@@ -171,7 +180,7 @@ impl IdleSettings {
 }
 
 /// Where an effective binding came from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Source {
     /// The binding is defined on this layer.
     Layer(LayerId),
@@ -181,7 +190,7 @@ pub enum Source {
     Unbound,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConfigError {
     NoLayers,
     TooManyLayers,
@@ -192,8 +201,8 @@ pub enum ConfigError {
     ParentCycle { layer: LayerId },
 }
 
-impl<'a> Config<'a> {
-    pub const fn new(layers: &'a [Layer]) -> Self {
+impl Config {
+    pub fn new(layers: Vec<Layer>) -> Self {
         Config {
             layers,
             global: [None; BUTTON_COUNT],
@@ -330,13 +339,13 @@ mod tests {
     #[test]
     fn example_is_valid() {
         let layers = example();
-        assert_eq!(Config::new(&layers).validate(), Ok(()));
+        assert_eq!(Config::new(layers.clone()).validate(), Ok(()));
     }
 
     #[test]
     fn layer_keys_change_meaning_per_layer() {
         let layers = example();
-        let c = Config::new(&layers);
+        let c = Config::new(layers.clone());
         assert_eq!(c.resolve_button(LayerId(0), k(M2)), KeyBinding::Layer(LayerId(2)));
         assert_eq!(c.resolve_button(LayerId(1), k(M2)), KeyBinding::Layer(LayerId(3)));
         assert_eq!(c.resolve_button(LayerId(2), k(M1)), KeyBinding::Layer(LayerId(4)));
@@ -345,7 +354,7 @@ mod tests {
     #[test]
     fn fallthrough_follows_fixed_parent_chain() {
         let layers = example();
-        let c = Config::new(&layers);
+        let c = Config::new(layers.clone());
         // L3 -> L1 overrides key 5.
         assert_eq!(c.resolve_button(LayerId(3), k(5)), key(0x3A));
         // L4 -> L2 -> L0 for key 5.
@@ -357,7 +366,7 @@ mod tests {
     #[test]
     fn layer_keys_are_not_inherited() {
         let layers = example();
-        let c = Config::new(&layers);
+        let c = Config::new(layers.clone());
         // L1 and L3 inherit the m1 key, but L0's "enter L1" is not passed down.
         assert_eq!(c.resolve_button(LayerId(1), k(M1)), KeyBinding::None);
         assert_eq!(c.resolve_button(LayerId(3), k(M1)), KeyBinding::None);
@@ -367,7 +376,7 @@ mod tests {
     fn global_applies_where_layer_inherits() {
         let mut layers = example();
         layers[1].set(k(11), KeyBinding::None);
-        let mut c = Config::new(&layers);
+        let mut c = Config::new(layers.clone());
         let mute = Action::Consumer(0xE2);
         c.global[k(11).index()] = Some(mute);
         // L0 binds key 11 explicitly: its own binding wins.
@@ -385,7 +394,7 @@ mod tests {
         let mut layers = example();
         layers[1].set(k(7), KeyBinding::Layer(LayerId(9)));
         assert_eq!(
-            Config::new(&layers).validate(),
+            Config::new(layers.clone()).validate(),
             Err(ConfigError::UnknownLayerTarget { layer: LayerId(1), button: k(7), target: LayerId(9) })
         );
     }
@@ -394,7 +403,7 @@ mod tests {
     fn rejects_parent_cycle_but_resolve_still_terminates() {
         let mut layers = example();
         layers[1].parent = Some(LayerId(3)); // L1 -> L3 -> L1
-        let c = Config::new(&layers);
+        let c = Config::new(layers.clone());
         assert!(matches!(c.validate(), Err(ConfigError::ParentCycle { .. })));
         assert_eq!(c.resolve_button(LayerId(3), k(8)), KeyBinding::None);
     }

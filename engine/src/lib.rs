@@ -5,6 +5,9 @@
 
 #![cfg_attr(not(test), no_std)]
 
+extern crate alloc;
+
+pub mod codec;
 pub mod config;
 pub mod engine;
 pub mod hid;
