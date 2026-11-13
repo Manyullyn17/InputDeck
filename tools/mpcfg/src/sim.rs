@@ -6,8 +6,8 @@ use std::collections::VecDeque;
 use macropad_engine::led;
 use macropad_engine::notation::write_action;
 use macropad_engine::{
-    Action, BUTTON_COUNT, Button, Config, Direction, Engine, Event, Instant, KEY_COUNT, KeyLight, Output,
-    SystemAction, label,
+    Action, BUTTON_COUNT, Button, Config, Direction, Engine, Event, Instant, KEY_COUNT, KeyBinding, KeyLight,
+    MacroId, MacroKind, Output, SystemAction, label,
 };
 use serde::Serialize;
 
@@ -20,6 +20,9 @@ pub struct Simulator {
     engine: Engine,
     now: u64,
     log: VecDeque<String>,
+    /// A macro started with [`Simulator::run_macro`]: its own engine on a
+    /// copy of the config, so it doesn't need a key binding.
+    preview: Option<(Config, Engine)>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -50,13 +53,37 @@ fn button(index: usize) -> Button {
 
 impl Simulator {
     pub fn new(config: Config) -> Self {
-        Simulator { config, engine: Engine::new(), now: 0, log: VecDeque::new() }
+        Simulator { config, engine: Engine::new(), now: 0, log: VecDeque::new(), preview: None }
     }
 
     /// Replaces the config (e.g. after an edit), releasing everything.
     pub fn set_config(&mut self, config: Config) {
         self.engine.reset(&mut |_| {});
         self.config = config;
+        self.preview = None;
+    }
+
+    /// Plays one run of macro `index` (whatever its type), as if bound to a
+    /// key that was tapped. Runs alongside the normal engine.
+    pub fn run_macro(&mut self, index: usize) -> bool {
+        if index >= self.config.macros.len() {
+            return false;
+        }
+        let mut config = self.config.clone();
+        config.macros[index].kind = MacroKind::OneShot;
+        let key = Button::key(0).unwrap();
+        config.layers[0].set(key, KeyBinding::Macro(MacroId(index as u8)));
+        let mut engine = Engine::new();
+        let mut outs = Vec::new();
+        let now = Instant(self.now);
+        engine.handle(&config, Event::Press(key), now, &mut |o| outs.push(o));
+        engine.handle(&config, Event::Release(key), now, &mut |o| outs.push(o));
+        self.log_push(format!("▶ macro {}", config.macros[index].name));
+        for o in outs {
+            self.record(o);
+        }
+        self.preview = engine.is_busy().then_some((config, engine));
+        true
     }
 
     fn record(&mut self, output: Output) {
@@ -78,6 +105,10 @@ impl Simulator {
                 SystemAction::Profile(i) => format!("⚙ profile {}", i as u16 + 1),
             },
         };
+        self.log_push(text);
+    }
+
+    fn log_push(&mut self, text: String) {
         if self.log.len() == LOG_LEN {
             self.log.pop_front();
         }
@@ -115,6 +146,12 @@ impl Simulator {
             self.now += 1;
             let mut outs = Vec::new();
             self.engine.tick(&self.config, Instant(self.now), &mut |o| outs.push(o));
+            if let Some((config, engine)) = &mut self.preview {
+                engine.tick(config, Instant(self.now), &mut |o| outs.push(o));
+                if !engine.is_busy() {
+                    self.preview = None;
+                }
+            }
             for o in outs {
                 self.record(o);
             }
@@ -159,7 +196,7 @@ impl Simulator {
             let _ = label::write_layer(&mut name, &self.config, layer);
             path.push(name);
         }
-        SimState { path, keys, log: self.log.iter().cloned().collect(), busy: self.engine.is_busy() }
+        SimState { path, keys, log: self.log.iter().cloned().collect(), busy: self.engine.is_busy() || self.preview.is_some() }
     }
 }
 
@@ -191,6 +228,20 @@ mod tests {
         sim.release(1);
         assert_eq!(sim.state().path, ["Base"]);
         assert!(sim.state().log.iter().any(|l| l == "→ layer Three"));
+    }
+
+    #[test]
+    fn macros_can_be_previewed_without_a_binding() {
+        let mut sim = Simulator::new(parse(DEMO).unwrap());
+        let ticker = 1; // a toggle macro: preview plays a single run
+        assert!(sim.run_macro(ticker));
+        assert!(sim.state().busy);
+        sim.tick(2000);
+        let s = sim.state();
+        assert!(!s.busy);
+        assert_eq!(s.log.iter().filter(|l| *l == "▼ t").count(), 1, "{:?}", s.log);
+        assert_eq!(s.path, ["Base"]);
+        assert!(!sim.run_macro(99));
     }
 
     #[test]

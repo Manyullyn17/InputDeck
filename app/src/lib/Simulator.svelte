@@ -52,6 +52,11 @@
     }
     sticky = next;
   }
+  /** Plays one run of a macro (called by the page's macro editor). */
+  export function runMacro(id: string) {
+    return run(api.simRunMacro(id));
+  }
+
   function reset() {
     sticky = new Set();
     run(api.simReset());

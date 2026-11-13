@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use macropad_engine::Config;
 use macropad_engine::codec::{self, Bundle, FORMAT_VERSION};
 use mpcfg::device::Device;
-use mpcfg::document::{ConfigDocument, DocumentView};
+use mpcfg::document::{ConfigDocument, DocumentView, MacroEdit};
 use mpcfg::sim::{SimState, Simulator};
 use mpcfg::to_toml;
 use serde::Serialize;
@@ -141,6 +141,21 @@ fn remove_layer(state: Shared, id: String) -> CmdResult<View> {
     edit(&state, |d| d.remove_layer(&id))
 }
 
+#[tauri::command]
+fn add_macro(state: Shared, id: String, name: String) -> CmdResult<View> {
+    edit(&state, |d| d.add_macro(&id, &name))
+}
+
+#[tauri::command]
+fn remove_macro(state: Shared, id: String) -> CmdResult<View> {
+    edit(&state, |d| d.remove_macro(&id))
+}
+
+#[tauri::command]
+fn set_macro(state: Shared, id: String, settings: MacroEdit) -> CmdResult<View> {
+    edit(&state, |d| d.set_macro(&id, &settings))
+}
+
 // ---- Simulator ----
 
 fn with_sim(state: &Shared, f: impl FnOnce(&mut Simulator)) -> CmdResult<SimState> {
@@ -176,6 +191,16 @@ fn sim_release(state: Shared, index: usize) -> CmdResult<SimState> {
 #[tauri::command]
 fn sim_rotate(state: Shared, clockwise: bool) -> CmdResult<SimState> {
     with_sim(&state, |sim| sim.rotate(clockwise))
+}
+
+/// Plays one run of a macro in the simulator, without a key binding.
+#[tauri::command]
+fn sim_run_macro(state: Shared, id: String) -> CmdResult<SimState> {
+    let mut s = state.lock().unwrap();
+    let index = s.doc.as_ref().and_then(|d| d.macro_ids().iter().position(|m| *m == id)).ok_or("no such macro")?;
+    let sim = s.sim.as_mut().ok_or("the config has errors; fix them to simulate")?;
+    sim.run_macro(index);
+    Ok(sim.state())
 }
 
 #[tauri::command]
@@ -327,7 +352,11 @@ pub fn run() {
             set_layer_parent,
             add_layer,
             remove_layer,
+            add_macro,
+            remove_macro,
+            set_macro,
             sim_state,
+            sim_run_macro,
             sim_reset,
             sim_press,
             sim_release,

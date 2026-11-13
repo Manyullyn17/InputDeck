@@ -6,9 +6,9 @@
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use macropad_engine::led::{self, Category, Rgb};
-use macropad_engine::notation::{parse_binding, parse_encoder};
+use macropad_engine::notation::{parse_binding, parse_encoder, parse_step};
 use macropad_engine::{Button, Config, KEY_COUNT, LayerId, MacroId, label};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::toml_config::{self, BASE, NO_PARENT};
@@ -57,6 +57,49 @@ pub struct KeyView {
 pub struct MacroView {
     pub id: String,
     pub name: String,
+    #[serde(flatten)]
+    pub settings: MacroEdit,
+    /// Where the macro is bound, e.g. "Tools · key 4".
+    pub used_by: Vec<String>,
+}
+
+/// A macro's editable fields, as written in the file.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct MacroEdit {
+    pub name: String,
+    /// "once", "while_held" or "toggle".
+    pub kind: String,
+    /// "finish" or "immediate" (toggle macros only).
+    pub stop: String,
+    /// Milliseconds between typed characters; `None` uses the global default.
+    pub char_delay: Option<u16>,
+    /// Steps in notation (`tap:a`, `down:shift`, `delay:50`, `text:hi`).
+    pub steps: Vec<String>,
+}
+
+const MACRO_KINDS: [&str; 3] = ["once", "while_held", "toggle"];
+const STOP_MODES: [&str; 2] = ["finish", "immediate"];
+
+fn check_id(id: &str, what: &str) -> Result<()> {
+    ensure!(
+        !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+        "{what} ids may only contain letters, digits, '_' and '-'"
+    );
+    Ok(())
+}
+
+/// Steps as an array: on one line when short, otherwise one per line.
+fn steps_array(steps: &[String]) -> Array {
+    let mut arr: Array = steps.iter().map(String::as_str).collect();
+    let one_line = steps.len() <= 4 && steps.iter().map(|s| s.len() + 4).sum::<usize>() <= 70;
+    if !one_line {
+        for v in arr.iter_mut() {
+            v.decor_mut().set_prefix("\n  ");
+        }
+        arr.set_trailing("\n");
+        arr.set_trailing_comma(true);
+    }
+    arr
 }
 
 pub fn hex(c: Rgb) -> String {
@@ -127,6 +170,99 @@ impl ConfigDocument {
             .and_then(Item::as_table)
             .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
             .unwrap_or_default()
+    }
+
+    fn macros_mut(&mut self) -> Result<&mut Table> {
+        let macros = self.doc.entry("macros").or_insert_with(|| {
+            let mut t = Table::new();
+            t.set_implicit(true);
+            Item::Table(t)
+        });
+        macros.as_table_mut().ok_or_else(|| anyhow!("'macros' is not a table"))
+    }
+
+    /// Adds an empty one-shot macro.
+    pub fn add_macro(&mut self, id: &str, name: &str) -> Result<()> {
+        check_id(id, "macro")?;
+        ensure!(!self.macro_ids().iter().any(|m| m == id), "macro '{id}' already exists");
+        let mut t = Table::new();
+        if !name.is_empty() {
+            t.insert("name", toml_edit::value(name));
+        }
+        t.insert("steps", toml_edit::value(Array::new()));
+        self.macros_mut()?.insert(id, Item::Table(t));
+        self.recompile();
+        Ok(())
+    }
+
+    /// Removes a macro. Keys still bound to it make the document invalid
+    /// until they are changed, which the view reports.
+    pub fn remove_macro(&mut self, id: &str) -> Result<()> {
+        self.macros_mut()?.remove(id).ok_or_else(|| anyhow!("no macro '{id}'"))?;
+        self.recompile();
+        Ok(())
+    }
+
+    /// Replaces a macro's settings and steps. Invalid input is rejected and
+    /// leaves the document unchanged.
+    pub fn set_macro(&mut self, id: &str, edit: &MacroEdit) -> Result<()> {
+        ensure!(MACRO_KINDS.contains(&edit.kind.as_str()), "unknown macro type '{}'", edit.kind);
+        ensure!(STOP_MODES.contains(&edit.stop.as_str()), "unknown stop mode '{}'", edit.stop);
+        for (i, step) in edit.steps.iter().enumerate() {
+            parse_step(step).map_err(|e| anyhow!("step {} '{step}': {e}", i + 1))?;
+        }
+        let table = self
+            .macros_mut()?
+            .get_mut(id)
+            .and_then(Item::as_table_mut)
+            .ok_or_else(|| anyhow!("no macro '{id}'"))?;
+        let mut set = |key: &str, value: Option<Value>| match value {
+            None => {
+                table.remove(key);
+            }
+            Some(mut v) => {
+                // Keep a trailing comment on the line, if there was one.
+                if let Some(old) = table.get(key).and_then(Item::as_value) {
+                    *v.decor_mut() = old.decor().clone();
+                }
+                table.insert(key, Item::Value(v));
+            }
+        };
+        set("name", (!edit.name.is_empty()).then(|| Value::from(edit.name.as_str())));
+        set("type", (edit.kind != "once").then(|| Value::from(edit.kind.as_str())));
+        set("stop", (edit.kind == "toggle" && edit.stop != "finish").then(|| Value::from(edit.stop.as_str())));
+        set("char_delay", edit.char_delay.map(|ms| Value::from(ms as i64)));
+        set("steps", Some(Value::Array(steps_array(&edit.steps))));
+        self.recompile();
+        Ok(())
+    }
+
+    fn macro_view(&self, id: String, layer_names: &[(String, String)]) -> MacroView {
+        let t = &self.doc["macros"][&id];
+        let text = |key: &str, default: &str| t.get(key).and_then(|v| v.as_str()).unwrap_or(default).to_string();
+        let steps = t
+            .get("steps")
+            .and_then(Item::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let settings = MacroEdit {
+            name: text("name", ""),
+            kind: text("type", "once").to_ascii_lowercase(),
+            stop: text("stop", "finish").to_ascii_lowercase(),
+            char_delay: t.get("char_delay").and_then(|v| v.as_integer()).map(|v| v as u16),
+            steps,
+        };
+        let target = format!("macro:{id}");
+        let mut used_by = Vec::new();
+        for (layer, name) in layer_names {
+            for k in 0..=ENCODER_PRESS {
+                if self.raw(layer, k).trim() == target {
+                    let key = if k == ENCODER_PRESS { "knob".to_string() } else { format!("key {}", k + 1) };
+                    used_by.push(format!("{name} · {key}"));
+                }
+            }
+        }
+        MacroView { id, name: settings.name.clone(), settings, used_by }
     }
 
     fn layer_mut(&mut self, id: &str) -> Result<&mut Table> {
@@ -213,10 +349,7 @@ impl ConfigDocument {
 
     /// Adds an empty layer (all keys inherit) after the existing ones.
     pub fn add_layer(&mut self, id: &str, name: &str) -> Result<()> {
-        ensure!(
-            !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
-            "layer ids may only contain letters, digits, '_' and '-'"
-        );
+        check_id(id, "layer")?;
         ensure!(id != NO_PARENT, "'{NO_PARENT}' is reserved");
         ensure!(!self.layer_ids().iter().any(|l| l == id), "layer '{id}' already exists");
         let layers = self.doc.entry("layers").or_insert_with(|| {
@@ -316,15 +449,12 @@ impl ConfigDocument {
                     encoder_ccw: self.raw_encoder(id, "ccw"),
                 }
             })
+            .collect::<Vec<LayerView>>();
+        let layer_names: Vec<(String, String)> = layers
+            .iter()
+            .map(|l: &LayerView| (l.id.clone(), if l.name.is_empty() { l.id.clone() } else { l.name.clone() }))
             .collect();
-        let macros = self
-            .macro_ids()
-            .into_iter()
-            .map(|id| {
-                let name = self.doc["macros"][&id].get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                MacroView { id, name }
-            })
-            .collect();
+        let macros = self.macro_ids().into_iter().map(|id| self.macro_view(id, &layer_names)).collect();
         DocumentView {
             name: self.doc.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             layers,
@@ -422,6 +552,62 @@ mod tests {
         let text = d.text();
         assert!(text.contains("keys = [\n  \"_\", \"_\", \"_\",\n  \"_\", \"_\", \"a\","), "{text}");
         assert!(ConfigDocument::parse(&text).unwrap().view().error.is_none());
+    }
+
+    #[test]
+    fn macro_editing() {
+        let mut d = ConfigDocument::parse(DEMO).unwrap();
+        let v = d.view();
+        let ws = v.macros.iter().find(|m| m.id == "word_skip").unwrap();
+        assert_eq!(ws.settings.kind, "while_held");
+        assert_eq!(ws.settings.steps, ["ctrl+right", "delay:120"]);
+        assert_eq!(v.macros.iter().find(|m| m.id == "hello").unwrap().used_by, ["Tools · key 1"]);
+
+        let mut edit = ws.settings.clone();
+        edit.steps.push("text:hi there".into());
+        edit.kind = "toggle".into();
+        edit.stop = "immediate".into();
+        d.set_macro("word_skip", &edit).unwrap();
+        let text = d.text();
+        assert!(text.contains("# jump word by word while held"), "{text}");
+        assert!(text.contains("stop = \"immediate\""), "{text}");
+        assert_eq!(d.view().error, None);
+        assert_eq!(d.view().macros.iter().find(|m| m.id == "word_skip").unwrap().settings, edit);
+
+        // Invalid steps are rejected without changes.
+        let before = d.text();
+        edit.steps.push("tap:ctlr+x".into());
+        assert!(d.set_macro("word_skip", &edit).unwrap_err().to_string().contains("step 4"));
+        edit.steps.pop();
+        edit.kind = "sometimes".into();
+        assert!(d.set_macro("word_skip", &edit).is_err());
+        assert_eq!(d.text(), before);
+
+        // Back to defaults removes the optional fields.
+        edit.kind = "once".into();
+        edit.stop = "finish".into();
+        d.set_macro("word_skip", &edit).unwrap();
+        assert!(!d.text().contains("stop = \"immediate\""));
+        assert!(!d.text().contains("type = \"once\""));
+
+        d.add_macro("new_one", "New").unwrap();
+        assert!(d.add_macro("new_one", "").is_err());
+        assert!(d.add_macro("bad id", "").is_err());
+        d.set_key("base", 3, "macro:new_one").unwrap();
+        assert_eq!(d.view().error, None, "{}", d.text());
+        d.remove_macro("new_one").unwrap();
+        assert!(d.view().error.is_some());
+    }
+
+    #[test]
+    fn long_step_lists_go_on_separate_lines() {
+        let mut d = ConfigDocument::parse("[layers.base]\n").unwrap();
+        d.add_macro("m", "").unwrap();
+        let steps: Vec<String> = (0..6).map(|i| format!("delay:{i}")).collect();
+        let edit = MacroEdit { name: String::new(), kind: "once".into(), stop: "finish".into(), char_delay: None, steps };
+        d.set_macro("m", &edit).unwrap();
+        assert!(d.text().contains("steps = [\n  \"delay:0\",\n  \"delay:1\","), "{}", d.text());
+        assert_eq!(d.view().error, None);
     }
 
     #[test]

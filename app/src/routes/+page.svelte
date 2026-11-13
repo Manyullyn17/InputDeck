@@ -1,9 +1,11 @@
 <script lang="ts">
   import { open, save } from "@tauri-apps/plugin-dialog";
-  import { api, message, ENCODER_PRESS, type LayerView, type View } from "$lib/api";
+  import { tick } from "svelte";
+  import { api, makeId, message, ENCODER_PRESS, type LayerView, type MacroEdit, type MacroView, type View } from "$lib/api";
   import BindingEditor from "$lib/BindingEditor.svelte";
   import DevicePanel from "$lib/DevicePanel.svelte";
   import KeyGrid from "$lib/KeyGrid.svelte";
+  import MacroEditor from "$lib/MacroEditor.svelte";
   import Simulator from "$lib/Simulator.svelte";
 
   let view = $state<View>({ path: null, dirty: false, doc: null });
@@ -13,11 +15,15 @@
   let tab = $state<"sim" | "device">("sim");
   /** Bumped on every document change so the simulator refreshes. */
   let revision = $state(0);
-  let newLayerId = $state("");
   let newLayerName = $state("");
+  let newMacroName = $state("");
+  /** The macro being edited; null shows the selected layer. */
+  let macroId = $state<string | null>(null);
+  let simulator = $state<ReturnType<typeof Simulator>>();
 
   const doc = $derived(view.doc);
   const layer = $derived<LayerView | undefined>(doc?.layers.find((l) => l.id === layerId) ?? doc?.layers[0]);
+  const macro = $derived<MacroView | undefined>(macroId ? doc?.macros.find((m) => m.id === macroId) : undefined);
   const fileName = $derived(view.path ? view.path.split("/").pop() : doc ? "unsaved" : "");
 
   // Layers as a tree by fallthrough parent, for the sidebar.
@@ -41,6 +47,7 @@
     view = v;
     revision++;
     if (v.doc && !v.doc.layers.some((l) => l.id === layerId)) layerId = v.doc.layers[0]?.id ?? "base";
+    if (macroId && !v.doc?.macros.some((m) => m.id === macroId)) macroId = null;
   }
 
   function flash(text: string) {
@@ -83,13 +90,35 @@
   }
 
   async function addLayer() {
-    const id = newLayerId.trim();
-    if (!id) return;
-    const e = await call(api.addLayer(id, newLayerName.trim()));
+    const name = newLayerName.trim();
+    if (!name || !doc) return;
+    const id = makeId(name, "layer", doc.layers.map((l) => l.id));
+    const e = await call(api.addLayer(id, name));
     if (e) return flash(e);
     layerId = id;
-    newLayerId = "";
+    macroId = null;
     newLayerName = "";
+  }
+
+  async function addMacro() {
+    const name = newMacroName.trim();
+    if (!name || !doc) return;
+    const id = makeId(name, "macro", doc.macros.map((m) => m.id));
+    const e = await call(api.addMacro(id, name));
+    if (e) return flash(e);
+    macroId = id;
+    newMacroName = "";
+  }
+
+  function applyMacro(settings: MacroEdit): Promise<string | null> {
+    return macroId ? call(api.setMacro(macroId, settings)) : Promise.resolve(null);
+  }
+
+  async function runMacro() {
+    if (!macroId) return;
+    tab = "sim";
+    await tick();
+    await simulator?.runMacro(macroId);
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -159,21 +188,54 @@
         <ul>
           {#each tree as { layer: l, depth }}
             <li>
-              <button class="layer" class:on={l.id === layer?.id} style:padding-left="{10 + depth * 16}px" onclick={() => (layerId = l.id)}>
+              <button
+                class="layer"
+                class:on={!macro && l.id === layer?.id}
+                style:padding-left="{10 + depth * 16}px"
+                onclick={() => {
+                  layerId = l.id;
+                  macroId = null;
+                }}
+              >
                 {l.name || l.id}<span class="muted mono"> {l.name ? l.id : ""}</span>
               </button>
             </li>
           {/each}
         </ul>
         <div class="add">
-          <input class="mono" placeholder="new id" bind:value={newLayerId} onkeydown={(e) => e.key === "Enter" && addLayer()} />
-          <input placeholder="name" bind:value={newLayerName} onkeydown={(e) => e.key === "Enter" && addLayer()} />
-          <button onclick={addLayer} disabled={!newLayerId.trim()}>Add layer</button>
+          <input placeholder="New layer name" bind:value={newLayerName} onkeydown={(e) => e.key === "Enter" && addLayer()} />
+          <button onclick={addLayer} disabled={!newLayerName.trim()}>Add</button>
+        </div>
+
+        <h2 class="section">Macros</h2>
+        <ul>
+          {#each doc.macros as m}
+            <li>
+              <button class="layer" class:on={m.id === macroId} onclick={() => (macroId = m.id)}>
+                {m.name || m.id}<span class="muted mono"> {m.name ? m.id : ""}</span>
+                {#if !m.used_by.length}<span class="muted" title="Not bound to any key"> ·</span>{/if}
+              </button>
+            </li>
+          {/each}
+          {#if !doc.macros.length}<li class="muted small">None yet.</li>{/if}
+        </ul>
+        <div class="add">
+          <input placeholder="New macro name" bind:value={newMacroName} onkeydown={(e) => e.key === "Enter" && addMacro()} />
+          <button onclick={addMacro} disabled={!newMacroName.trim()}>Add</button>
         </div>
       </aside>
 
       <section class="center">
-        {#if layer}
+        {#if macro}
+          <div class="panel">
+            <MacroEditor
+              {macro}
+              onapply={applyMacro}
+              onrun={runMacro}
+              ondelete={() => report(api.removeMacro(macro.id))}
+            />
+          </div>
+        {:else if layer}
           <div class="props">
             <label>
               <span>Name</span>
@@ -219,7 +281,7 @@
         </div>
         <div class="panel">
           {#if tab === "sim"}
-            <Simulator {revision} />
+            <Simulator {revision} bind:this={simulator} />
           {:else}
             <DevicePanel canUpload={!doc.error} onpulled={(v) => { setView(v); flash("Opened from the device — save to keep it"); }} />
           {/if}
@@ -315,10 +377,20 @@
     border-color: var(--accent);
   }
   .add {
-    margin-top: 10px;
+    margin-top: 4px;
     display: flex;
-    flex-direction: column;
     gap: 6px;
+  }
+  .add input {
+    flex: 1;
+    min-width: 0;
+  }
+  .section {
+    margin-top: 18px;
+  }
+  .small {
+    font-size: 12px;
+    padding: 4px 10px;
   }
   .center {
     display: flex;
