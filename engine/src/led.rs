@@ -205,6 +205,12 @@ pub fn key_colors(config: &Config, engine: &Engine, host_leds: u8) -> [Rgb; KEY_
     colors
 }
 
+/// The idle color of `button` on `layer` at full level (no key state),
+/// e.g. for showing a layer's colors in an editor.
+pub fn idle_color(config: &Config, layer: LayerId, button: Button) -> Rgb {
+    base(config, layer, button)
+}
+
 fn own_color(config: &Config, source: Source, button: Button) -> Option<KeyColor> {
     match source {
         Source::Layer(id) => config.layer(id).map(|l| l.key_colors[button.index()]),

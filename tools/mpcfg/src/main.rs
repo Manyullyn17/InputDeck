@@ -1,9 +1,5 @@
 //! mpcfg: Macropad OS config tool.
 
-mod device;
-mod layouts;
-mod to_toml;
-mod toml_config;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,7 +9,8 @@ use clap::{Parser, Subcommand};
 use macropad_engine::codec::{self, Bundle, FORMAT_VERSION};
 use macropad_engine::{Config, KEY_COUNT, KeyBinding};
 
-use device::Device;
+use mpcfg::device::Device;
+use mpcfg::{to_toml, toml_config};
 
 #[derive(Parser)]
 #[command(about = "Macropad OS config tool")]

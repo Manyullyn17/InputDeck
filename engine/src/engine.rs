@@ -193,6 +193,13 @@ impl Engine {
         self.held[button.index()] != Held::Up
     }
 
+    /// Whether time-based work is pending (macros, repeat toggles), i.e.
+    /// whether [`Engine::tick`] needs to keep being called.
+    pub fn is_busy(&self) -> bool {
+        !self.runners.is_empty()
+            || self.toggles.iter().flatten().any(|t| matches!(t.kind, Active::Repeat { .. }))
+    }
+
     pub fn is_running(&self, id: MacroId) -> bool {
         self.runners.iter().any(|r| r.id == id)
     }
