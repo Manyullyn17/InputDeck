@@ -111,8 +111,15 @@
     rows = rows.filter((_, k) => k !== i);
   }
 
-  async function apply() {
+  async function apply(): Promise<boolean> {
     error = await onapply(edited);
+    return error === null;
+  }
+
+  /** Runs the macro as shown, applying pending edits first. */
+  async function run() {
+    if (changed && !(await apply())) return;
+    onrun();
   }
 
   function confirmDelete() {
@@ -125,7 +132,7 @@
   <div class="head">
     <h2>Macro <span class="muted mono">{macro.id}</span></h2>
     <div class="head-btns">
-      <button onclick={onrun} disabled={changed} title={changed ? "Apply your changes first" : "Play one run in the simulator"}>▶ Run</button>
+      <button onclick={run} title="Play one run in the simulator">{changed ? "▶ Apply & run" : "▶ Run"}</button>
       <button class="danger" onclick={confirmDelete}>Delete</button>
     </div>
   </div>
@@ -218,6 +225,7 @@
   {#if error}<p class="error">{error}</p>{/if}
 
   <div class="actions">
+    {#if changed}<span class="warn small pending">Unapplied changes</span>{/if}
     <button onclick={load} disabled={!changed}>Revert</button>
     <button class="primary" onclick={apply} disabled={!changed}>Apply</button>
   </div>
@@ -324,6 +332,10 @@
   }
   .warn {
     color: var(--warn);
+  }
+  .pending {
+    margin-right: auto;
+    align-self: center;
   }
   .actions {
     display: flex;

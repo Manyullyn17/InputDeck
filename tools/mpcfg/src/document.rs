@@ -56,7 +56,6 @@ pub struct KeyView {
 #[derive(Serialize, Debug, Clone)]
 pub struct MacroView {
     pub id: String,
-    pub name: String,
     #[serde(flatten)]
     pub settings: MacroEdit,
     /// Where the macro is bound, e.g. "Tools · key 4".
@@ -262,7 +261,7 @@ impl ConfigDocument {
                 }
             }
         }
-        MacroView { id, name: settings.name.clone(), settings, used_by }
+        MacroView { id, settings, used_by }
     }
 
     fn layer_mut(&mut self, id: &str) -> Result<&mut Table> {
