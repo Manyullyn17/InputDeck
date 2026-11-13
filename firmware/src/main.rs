@@ -1,7 +1,8 @@
 //! Macropad OS firmware for the Adafruit MacroPad RP2040.
 //!
 //! Bring-up stage: scans keys and encoder, runs the shared engine with a
-//! hard-coded demo config, and sends USB HID keyboard and media reports.
+//! hard-coded demo config, sends USB HID keyboard and media reports, and
+//! shows the current layer and key bindings on the OLED.
 //! The red LED is lit whenever a layer other than the base layer is active.
 //! Holding the knob plus keys 10 and 12 reboots into the UF2 bootloader.
 
@@ -9,34 +10,46 @@
 #![no_main]
 
 mod demo;
+mod display;
 mod input;
 
 use embassy_executor::Spawner;
-use embassy_futures::join::join;
-use embassy_rp::bind_interrupts;
+use embassy_futures::join::join3;
 use embassy_rp::gpio::{Input, Level, Output as Pin, Pull};
-use embassy_rp::peripherals::USB;
-use embassy_rp::usb::{Driver, InterruptHandler};
+use embassy_rp::peripherals::{DMA_CH0, USB};
+use embassy_rp::{bind_interrupts, dma, spi, usb};
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Ticker};
 use embassy_usb::Builder;
 use embassy_usb::class::hid::{self, HidBootProtocol, HidSubclass, HidWriter};
 use heapless::Vec;
-use macropad_engine::{Config, Engine, Event, HidState, Instant, LayerId, Output};
+use macropad_engine::{BUTTON_COUNT, Config, Engine, Event, HidState, Instant, LayerId, Output};
 use panic_halt as _;
 use usbd_hid::descriptor::{KeyboardReport, MediaKeyboardReport, SerializedDescriptor};
 
+use display::{Framebuffer, Sh1106, Snapshot};
 use input::{Debouncer, Encoder};
 
 bind_interrupts!(struct Irqs {
-    USBCTRL_IRQ => InterruptHandler<USB>;
+    USBCTRL_IRQ => usb::InterruptHandler<USB>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
 });
+
+fn snapshot(engine: &Engine) -> Snapshot {
+    let mut held = [false; BUTTON_COUNT];
+    for (i, h) in held.iter_mut().enumerate() {
+        *h = engine.is_held(input::button(i));
+    }
+    Snapshot { layer: engine.layer(), path: engine.layer_path().collect(), held }
+}
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
     // ---- USB ----
-    let driver = Driver::new(p.USB, Irqs);
+    let driver = usb::Driver::new(p.USB, Irqs);
     // pid.codes test VID/PID; fine for a personal device.
     let mut usb_config = embassy_usb::Config::new(0x1209, 0x0001);
     usb_config.manufacturer = Some("Macropad OS");
@@ -58,7 +71,7 @@ async fn main(_spawner: Spawner) {
         &mut control_buf,
     );
 
-    let mut keyboard =HidWriter::<_, 8>::new(
+    let mut keyboard = HidWriter::<_, 8>::new(
         &mut builder,
         &mut keyboard_state,
         hid::Config {
@@ -71,7 +84,7 @@ async fn main(_spawner: Spawner) {
         },
     );
 
-    let mut media =HidWriter::<_, 2>::new(
+    let mut media = HidWriter::<_, 2>::new(
         &mut builder,
         &mut media_state,
         hid::Config {
@@ -108,8 +121,32 @@ async fn main(_spawner: Spawner) {
     let rot_b = Input::new(p.PIN_18, Pull::Up);
     let mut led = Pin::new(p.PIN_13, Level::Low);
 
+    // ---- Display ----
+    let mut spi_config = spi::Config::default();
+    spi_config.frequency = 10_000_000;
+    let oled_spi = spi::Spi::new_txonly(p.SPI1, p.PIN_26, p.PIN_27, p.DMA_CH0, Irqs, spi_config);
+    let oled_cs = Pin::new(p.PIN_22, Level::High);
+    let oled_reset = Pin::new(p.PIN_23, Level::High);
+    let oled_dc = Pin::new(p.PIN_24, Level::Low);
+
     let layers = demo::layers();
     let config = Config::new(&layers);
+
+    // Latest state for the display; newer snapshots overwrite unread ones.
+    let screen: Signal<NoopRawMutex, Snapshot> = Signal::new();
+
+    let display_loop = async {
+        let mut oled = Sh1106::new(oled_spi, oled_dc, oled_cs, oled_reset).await;
+        let mut fb = Framebuffer::new();
+        display::render(&mut fb, &config, &snapshot(&Engine::new()));
+        oled.flush(&fb).await;
+        oled.on().await;
+        loop {
+            let snap = screen.wait().await;
+            display::render(&mut fb, &config, &snap);
+            oled.flush(&fb).await;
+        }
+    };
 
     let input_loop = async {
         let mut debouncer = Debouncer::new();
@@ -135,7 +172,9 @@ async fn main(_spawner: Spawner) {
                 let _ = events.push(event);
             }
 
+            let mut screen_dirty = false;
             for event in events {
+                screen_dirty |= matches!(event, Event::Press(_) | Event::Release(_));
                 let mut outputs: Vec<Output, 16> = Vec::new();
                 engine.handle(&config, event, now, &mut |o| {
                     let _ = outputs.push(o);
@@ -163,8 +202,11 @@ async fn main(_spawner: Spawner) {
                     }
                 }
             }
+            if screen_dirty {
+                screen.signal(snapshot(&engine));
+            }
         }
     };
 
-    join(usb.run(), input_loop).await;
+    join3(usb.run(), input_loop, display_loop).await;
 }

@@ -12,6 +12,7 @@ embassy-rp = { version = "0.10.0", features = ["rp2040", "time-driver", "critica
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 embassy-usb = "0.6.0"
+embedded-graphics = "0.8.2"
 heapless = "0.8"
 macropad-engine = { version = "0.1.0", path = "../engine" }
 panic-halt = "1.0.0"

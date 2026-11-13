@@ -41,7 +41,7 @@ impl Debouncer {
     }
 }
 
-fn button(index: usize) -> Button {
+pub fn button(index: usize) -> Button {
     if index < KEY_COUNT { Button::key(index as u8).unwrap() } else { Button::ENCODER }
 }
 

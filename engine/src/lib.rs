@@ -8,6 +8,7 @@
 pub mod config;
 pub mod engine;
 pub mod hid;
+pub mod label;
 
 #[cfg(test)]
 mod testutil;
