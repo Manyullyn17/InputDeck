@@ -81,7 +81,9 @@
     kind: macro.kind,
     stop: macro.stop,
     char_delay: macro.char_delay,
-    steps: macro.steps,
+    // Normalized like the edited steps, so equivalent spellings
+    // ("tap:enter" vs "enter") don't count as changes.
+    steps: macro.steps.map((s) => formatStep(parseStep(s))),
   });
   const changed = $derived(JSON.stringify(edited) !== JSON.stringify(original));
   const hasText = $derived(rows.some((r) => r.type === "text"));

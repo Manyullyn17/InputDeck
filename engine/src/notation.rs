@@ -404,10 +404,8 @@ pub fn write_step(w: &mut impl Write, step: &Step) -> fmt::Result {
             w.write_str("up:")?;
             write_action(w, *a)
         }
-        Step::Tap(a) => {
-            w.write_str("tap:")?;
-            write_action(w, *a)
-        }
+        // A bare action is a tap, as it's usually written by hand.
+        Step::Tap(a) => write_action(w, *a),
         Step::Delay { ms } => write!(w, "delay:{ms}"),
         Step::Text(t) => write!(w, "text:{t}"),
     }

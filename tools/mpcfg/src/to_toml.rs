@@ -272,6 +272,19 @@ mod tests {
     }
 
     #[test]
+    fn pulled_macro_steps_match_the_handwritten_form() {
+        // The app compares steps as text, so a profile read back from the
+        // device should spell them like the original file.
+        let text = write(&parse(DEMO).unwrap());
+        let doc = crate::document::ConfigDocument::parse(&text).unwrap();
+        let original = crate::document::ConfigDocument::parse(DEMO).unwrap();
+        let steps = |d: &crate::document::ConfigDocument| {
+            d.view().macros.into_iter().map(|m| m.settings.steps).collect::<Vec<_>>()
+        };
+        assert_eq!(steps(&doc), steps(&original));
+    }
+
+    #[test]
     fn default_config_roundtrips() {
         let config = macropad_engine::Config::new(vec![macropad_engine::Layer::empty()]);
         let back = parse(&write(&config)).unwrap();
