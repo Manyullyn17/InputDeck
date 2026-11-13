@@ -1,6 +1,7 @@
 //! mpcfg: Macropad OS config tool.
 
 mod device;
+mod layouts;
 mod to_toml;
 mod toml_config;
 

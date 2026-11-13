@@ -7,11 +7,10 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
-use macropad_engine::layout::KeyboardLayout;
 use macropad_engine::led::{Color, HeldStyle, KeyColor, Palette};
 use macropad_engine::notation::{write_action, write_binding, write_color, write_step};
 use macropad_engine::{
-    Button, Config, EncoderBinding, HostLed, KEY_COUNT, KeyBinding, MacroKind, StopMode,
+    Action, Button, Config, EncoderBinding, HostLed, KEY_COUNT, KeyBinding, KeyStroke, MacroKind, StopMode,
 };
 
 use crate::toml_config::{BASE, NO_PARENT};
@@ -105,11 +104,29 @@ pub fn write(config: &Config) -> String {
     let o = &mut out;
     writeln!(o, "# Macropad OS config, pulled from the device.").unwrap();
     writeln!(o, "# See configs/demo.toml in the repository for the format.\n").unwrap();
-    let layout = match config.layout {
-        KeyboardLayout::Us => "us",
-        KeyboardLayout::De => "de",
+    // The char map is written out in full, so the file doesn't depend on
+    // the layout being available where it is compiled.
+    writeln!(o, "[layout]").unwrap();
+    if !config.layout_name.is_empty() {
+        writeln!(o, "base = {}", quote(&config.layout_name)).unwrap();
+    }
+    let stroke = |s: &KeyStroke| {
+        let mut t = String::new();
+        write_action(&mut t, Action::Key { code: s.code, mods: s.mods }).unwrap();
+        quote(&t)
     };
-    writeln!(o, "layout = {}\n", quote(layout)).unwrap();
+    let chars: Vec<String> = config
+        .char_map
+        .iter()
+        .map(|c| {
+            let keys = match c.keys.as_slice() {
+                [one] => stroke(one),
+                many => format!("[{}]", many.iter().map(stroke).collect::<Vec<_>>().join(", ")),
+            };
+            format!("{} = {keys}", quote(&c.ch.to_string()))
+        })
+        .collect();
+    writeln!(o, "chars = {{ {} }}\n", chars.join(", ")).unwrap();
 
     writeln!(o, "[timing]\ntap = {}\nchar_delay = {}\n", config.timing.tap_ms, config.timing.char_delay_ms).unwrap();
 
@@ -256,6 +273,14 @@ mod tests {
         let config = macropad_engine::Config::new(vec![macropad_engine::Layer::empty()]);
         let back = parse(&write(&config)).unwrap();
         assert_eq!(back, config);
+    }
+
+    #[test]
+    fn char_map_with_sequences_roundtrips() {
+        let text = "layout = 'de'\n[layers.base]\n[macros.x]\nsteps = ['text:^é\\n ß']\n";
+        let original = parse(text).unwrap();
+        let back = parse(&write(&original)).unwrap();
+        assert_eq!(back, original);
     }
 
     #[test]

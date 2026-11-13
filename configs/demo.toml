@@ -18,7 +18,15 @@
 #
 # Colors: "#rrggbb", "off", or "_" (inherit).
 
-# The computer's keyboard layout, used to type text in macros: "us" or "de".
+# The computer's keyboard layout, used to type text in macros:
+#   "us", "de"        built in
+#   "xkb:eu"          any XKB layout from /usr/share/X11/xkb/symbols (eu = EurKEY),
+#                     with an optional variant: "xkb:de(nodeadkeys)"
+#   "system"          the active desktop layout (KDE)
+# Single characters can be added or overridden:
+#   [layout]
+#   base = "us"
+#   chars = { "€" = "ralt+5", "é" = ["ralt+0x34", "e"] }   # key or key sequence
 layout = "us"
 
 [timing]

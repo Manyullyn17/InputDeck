@@ -5,13 +5,17 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use indexmap::IndexMap;
-use macropad_engine::layout::KeyboardLayout;
 use macropad_engine::led::{Color, HeldStyle, KeyColor, LedSettings, Palette};
 use macropad_engine::notation::{parse_action, parse_binding, parse_color, parse_encoder, parse_step};
 use macropad_engine::{
-    Button, Config, ConfigError, HostLed, IdleSettings, Indicator, KEY_COUNT, Layer, LayerId, Macro, MacroId,
-    MacroKind, MacroTiming, StopMode,
+    Action, Button, CharKeys, Config, ConfigError, HostLed, IdleSettings, Indicator, KEY_COUNT, KeyStroke, Layer,
+    LayerId, Macro, MacroId, MacroKind, MacroTiming, Step, StopMode,
 };
+
+use crate::layouts::{self, CharTable};
+
+/// Layout used to type text when none is configured.
+pub const DEFAULT_LAYOUT: &str = "us";
 use serde::Deserialize;
 
 /// Id of the layer that becomes layer 0.
@@ -22,8 +26,10 @@ pub const NO_PARENT: &str = "none";
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct File {
-    /// The computer's keyboard layout for typing text: "us" or "de".
-    pub layout: Option<String>,
+    /// The computer's keyboard layout for typing text: a name ("us", "de",
+    /// "system", "xkb:<name>") or a table with `base` and per-character
+    /// `chars` overrides.
+    pub layout: Option<LayoutToml>,
     #[serde(default)]
     pub timing: TimingToml,
     #[serde(default)]
@@ -38,6 +44,29 @@ pub struct File {
     pub layers: IndexMap<String, LayerToml>,
     #[serde(default)]
     pub macros: IndexMap<String, MacroToml>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum LayoutToml {
+    Name(String),
+    Table(LayoutTable),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LayoutTable {
+    pub base: Option<String>,
+    /// Character → key ("altgr+a") or key sequence (["0x35", "space"]).
+    #[serde(default)]
+    pub chars: IndexMap<String, CharKeysToml>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum CharKeysToml {
+    One(String),
+    Sequence(Vec<String>),
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -204,13 +233,9 @@ pub fn compile(file: &File) -> Result<Config> {
     for (id, src) in &file.macros {
         config.macros.push(compile_macro(src).with_context(|| format!("in [macros.{id}]"))?);
     }
-    if let Some(layout) = &file.layout {
-        config.layout = match layout.to_ascii_lowercase().as_str() {
-            "us" => KeyboardLayout::Us,
-            "de" => KeyboardLayout::De,
-            other => bail!("layout: '{other}' (expected us or de)"),
-        };
-    }
+    let (name, char_map) = compile_layout(file, &macro_ids, &config.macros)?;
+    config.layout_name = name;
+    config.char_map = char_map;
     let mut timing = MacroTiming::DEFAULT;
     if let Some(v) = file.timing.tap {
         timing.tap_ms = v;
@@ -285,14 +310,71 @@ pub fn compile(file: &File) -> Result<Config> {
     config.idle = idle;
 
     config.validate().map_err(|e| match e {
-        ConfigError::UntypeableChar { macro_id, ch } => anyhow!(
-            "in [macros.{}]: '{ch}' can't be typed with the {:?} keyboard layout",
-            macro_ids[macro_id.0 as usize],
-            config.layout
-        ),
+        ConfigError::UntypeableChar { macro_id, ch } => {
+            anyhow!("in [macros.{}]: can't type {ch:?}", macro_ids[macro_id.0 as usize])
+        }
         other => anyhow!("invalid config: {other:?}"),
     })?;
     Ok(config)
+}
+
+fn stroke(text: &str) -> Result<KeyStroke> {
+    match parse_action(text).map_err(|e| anyhow!("'{text}': {e}"))? {
+        Action::Key { code, mods } => Ok(KeyStroke { code, mods }),
+        Action::Consumer(_) => bail!("'{text}': media keys can't type characters"),
+    }
+}
+
+/// Builds the char map for every character used in text steps: explicit
+/// `[layout.chars]` entries first, then the layout (loaded only if needed).
+/// Returns the configured layout name ("" if none) and the map.
+fn compile_layout(file: &File, macro_ids: &[&str], macros: &[Macro]) -> Result<(String, Vec<CharKeys>)> {
+    let (name, overrides) = match &file.layout {
+        None => (None, None),
+        Some(LayoutToml::Name(n)) => (Some(n.as_str()), None),
+        Some(LayoutToml::Table(t)) => (t.base.as_deref(), Some(&t.chars)),
+    };
+    let source = name.unwrap_or(DEFAULT_LAYOUT);
+
+    let mut map: BTreeMap<char, Vec<KeyStroke>> = BTreeMap::new();
+    for (text, keys) in overrides.into_iter().flatten() {
+        let mut chars = text.chars();
+        let (Some(ch), None) = (chars.next(), chars.next()) else {
+            bail!("layout.chars: '{text}' must be a single character");
+        };
+        let strokes = match keys {
+            CharKeysToml::One(k) => vec![stroke(k)?],
+            CharKeysToml::Sequence(ks) => ks.iter().map(|k| stroke(k)).collect::<Result<_>>()?,
+        };
+        ensure!(!strokes.is_empty(), "layout.chars: '{text}' needs at least one key");
+        map.insert(ch, strokes);
+    }
+
+    let mut table: Option<CharTable> = None;
+    for (i, m) in macros.iter().enumerate() {
+        for step in &m.steps {
+            let Step::Text(text) = step else { continue };
+            for ch in text.chars() {
+                if map.contains_key(&ch) {
+                    continue;
+                }
+                if table.is_none() {
+                    table = Some(layouts::load(source).with_context(|| format!("loading layout '{source}'"))?);
+                }
+                match table.as_ref().unwrap().get(&ch) {
+                    Some(keys) => {
+                        map.insert(ch, keys.clone());
+                    }
+                    None => bail!(
+                        "in [macros.{}]: {ch:?} can't be typed with layout '{source}'; add it under [layout.chars]",
+                        macro_ids[i]
+                    ),
+                }
+            }
+        }
+    }
+    let char_map = map.into_iter().map(|(ch, keys)| CharKeys { ch, keys }).collect();
+    Ok((name.unwrap_or("").to_string(), char_map))
 }
 
 fn compile_macro(src: &MacroToml) -> Result<Macro> {
@@ -419,7 +501,8 @@ mod tests {
             steps = ["down:shift", "h", "up:shift", "delay:100ms", "text:allo ß"]
         "#;
         let c = parse(text).unwrap();
-        assert_eq!(c.layout, KeyboardLayout::De);
+        assert_eq!(c.layout_name, "de");
+        assert_eq!(c.char_keys('ß').unwrap()[0].code.0, 0x2D);
         assert_eq!(c.macros.len(), 1);
         assert_eq!(c.macros[0].kind, MacroKind::Toggle);
         assert_eq!(c.macros[0].stop, StopMode::Immediate);
@@ -431,8 +514,35 @@ mod tests {
     fn untypeable_text_is_reported() {
         let text = "[layers.base]\n[macros.x]\nsteps = ['text:straße']\n";
         let msg = format!("{:#}", parse(text).unwrap_err());
-        assert!(msg.contains("[macros.x]") && msg.contains("'ß'") && msg.contains("Us"), "{msg}");
+        assert!(msg.contains("[macros.x]") && msg.contains("'ß'") && msg.contains("[layout.chars]"), "{msg}");
         assert!(parse(&format!("layout = 'de'\n{text}")).is_ok());
+    }
+
+    #[test]
+    fn layout_overrides_and_sequences() {
+        let text = r#"
+            [layout]
+            base = "us"
+            chars = { "ß" = "altgr+s", "é" = ["ralt+0x34", "e"] }
+            [layers.base]
+            [macros.x]
+            steps = ["text:aßé"]
+        "#;
+        let c = parse(text).unwrap();
+        assert_eq!(c.layout_name, "us");
+        assert_eq!(c.char_map.len(), 3); // only a, ß, é
+        assert_eq!(c.char_keys('ß').unwrap().len(), 1);
+        assert_eq!(c.char_keys('é').unwrap().len(), 2);
+        assert!(parse("[layout]\nchars = { 'ab' = 'a' }\n[layers.base]\n").is_err());
+        assert!(parse("[layout]\nchars = { 'x' = 'vol+' }\n[layers.base]\n").is_err());
+    }
+
+    #[test]
+    fn layout_is_only_loaded_when_needed() {
+        // An unavailable layout is fine as long as nothing needs it.
+        assert!(parse("layout = 'xkb:does-not-exist'\n[layers.base]\n").is_ok());
+        let text = "layout = 'xkb:does-not-exist'\n[layers.base]\n[macros.x]\nsteps = ['text:a']\n";
+        assert!(parse(text).is_err());
     }
 
     #[test]

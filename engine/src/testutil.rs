@@ -41,3 +41,13 @@ pub fn example() -> Vec<Layer> {
 
     vec![base, l1, l2, l3, l4]
 }
+
+/// A small char map: a, B (shift+b), and ^ as a dead key followed by space.
+pub fn char_map() -> Vec<CharKeys> {
+    let stroke = |code, mods| KeyStroke { code: KeyCode(code), mods: Modifiers(mods) };
+    vec![
+        CharKeys { ch: 'B', keys: vec![stroke(0x05, Modifiers::LSHIFT.0)] },
+        CharKeys { ch: '^', keys: vec![stroke(0x35, 0), stroke(0x2C, 0)] },
+        CharKeys { ch: 'a', keys: vec![stroke(0x04, 0)] },
+    ]
+}

@@ -21,7 +21,6 @@ use alloc::vec::Vec;
 use core::mem::replace;
 
 use crate::config::*;
-use crate::layout;
 
 /// Milliseconds since boot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -109,6 +108,8 @@ struct Runner {
     key_down: bool,
     /// Byte offset into the current text step.
     text_pos: usize,
+    /// Index of the key press within the current character's sequence.
+    stroke: usize,
     next: Instant,
     /// While-held macros: whether the key is still held.
     holding: bool,
@@ -328,6 +329,7 @@ impl Engine {
             step: 0,
             key_down: false,
             text_pos: 0,
+            stroke: 0,
             next: now,
             holding: m.kind == MacroKind::WhileHeld,
             stopping: false,
@@ -544,18 +546,31 @@ fn advance(r: &mut Runner, config: &Config, now: Instant, out: &mut impl FnMut(O
                 r.step += 1;
             }
             Step::Text(text) => {
+                let current = text[r.text_pos..].chars().next();
+                let keys = current.and_then(|c| config.char_keys(c)).unwrap_or(&[]);
                 if let Some((code, mods)) = r.typing.take() {
                     out(Output::TypeRelease { code, mods });
-                    r.text_pos += text[r.text_pos..].chars().next().map_or(1, char::len_utf8);
-                    r.next = now.after_ms(char_delay);
-                } else if let Some(c) = text[r.text_pos..].chars().next() {
-                    match layout::char_to_key(config.layout, c) {
-                        Some((code, mods)) => {
+                    r.stroke += 1;
+                    if r.stroke < keys.len() {
+                        // Next key of a sequence (e.g. after a dead key).
+                        r.next = now.after_ms(tap);
+                    } else {
+                        r.stroke = 0;
+                        r.text_pos += current.map_or(1, char::len_utf8);
+                        r.next = now.after_ms(char_delay);
+                    }
+                } else if let Some(c) = current {
+                    match keys.get(r.stroke) {
+                        Some(&KeyStroke { code, mods }) => {
                             out(Output::TypePress { code, mods });
                             r.typing = Some((code, mods));
                             r.next = now.after_ms(tap);
                         }
-                        None => r.text_pos += c.len_utf8(), // rejected by validation; skip
+                        None => {
+                            // Missing from the char map (rejected by validation); skip.
+                            r.stroke = 0;
+                            r.text_pos += c.len_utf8();
+                        }
                     }
                 } else {
                     r.text_pos = 0;
@@ -862,6 +877,7 @@ mod tests {
         let mut layers = example();
         layers[0].set(k(4), KeyBinding::Macro(MacroId(0)));
         let mut config = Config::new(layers);
+        config.char_map = char_map();
         config.macros.push(Macro { name: "m".into(), kind, steps, stop, char_delay_ms: None });
         config.timing = MacroTiming { tap_ms: 5, char_delay_ms: 5 };
         Harness::with_config(config)
@@ -943,6 +959,38 @@ mod tests {
                 TypeRelease { code: KeyCode(0x05), mods: shift },
             ]
         );
+    }
+
+    #[test]
+    fn dead_key_sequences_are_typed_in_order() {
+        let mut h = macro_config(MacroKind::OneShot, StopMode::FinishRun, vec![Step::Text("^a".into())]);
+        let mut outs = h.press(4);
+        outs.extend(h.run_until(100));
+        let none = Modifiers::NONE;
+        assert_eq!(
+            outs,
+            [
+                TypePress { code: KeyCode(0x35), mods: none },
+                TypeRelease { code: KeyCode(0x35), mods: none },
+                TypePress { code: KeyCode(0x2C), mods: none },
+                TypeRelease { code: KeyCode(0x2C), mods: none },
+                TypePress { code: KeyCode(0x04), mods: none },
+                TypeRelease { code: KeyCode(0x04), mods: none },
+            ]
+        );
+    }
+
+    #[test]
+    fn text_needs_char_map_entries() {
+        let mut config = Config::new(example());
+        config.macros.push(Macro {
+            name: String::new(),
+            kind: MacroKind::OneShot,
+            steps: vec![Step::Text("x".into())],
+            stop: StopMode::FinishRun,
+            char_delay_ms: None,
+        });
+        assert_eq!(config.validate(), Err(ConfigError::UntypeableChar { macro_id: MacroId(0), ch: 'x' }));
     }
 
     #[test]
