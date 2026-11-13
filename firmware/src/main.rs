@@ -15,6 +15,7 @@ extern crate alloc;
 mod demo;
 mod display;
 mod input;
+mod keyboard;
 mod serial;
 mod storage;
 
@@ -34,10 +35,12 @@ use embassy_usb::Builder;
 use embassy_usb::class::hid::{self, HidBootProtocol, HidSubclass, HidWriter};
 use heapless::Vec;
 use macropad_engine::led::{self, Rgb};
-use macropad_engine::{BUTTON_COUNT, Config, Engine, Event, HidState, Instant, KEY_COUNT, KeyLight, LayerId, Output};
+use macropad_engine::{
+    BUTTON_COUNT, Config, Engine, Event, HidState, Instant, KEY_COUNT, KeyLight, LayerId, NKRO_REPORT_LEN, Output,
+};
 use smart_leds::RGB8;
 use panic_halt as _;
-use usbd_hid::descriptor::{KeyboardReport, MediaKeyboardReport, SerializedDescriptor};
+use usbd_hid::descriptor::{MediaKeyboardReport, SerializedDescriptor};
 
 use display::{Framebuffer, Phase, Sh1106, Snapshot};
 use input::{Debouncer, Encoder};
@@ -124,6 +127,7 @@ async fn main(_spawner: Spawner) {
     let mut keyboard_state = hid::State::new();
     let mut media_state = hid::State::new();
     let mut serial_state = cdc_acm::State::new();
+    let mut keyboard_handler = keyboard::ProtocolHandler;
     let mut builder = Builder::new(
         driver,
         usb_config,
@@ -133,14 +137,14 @@ async fn main(_spawner: Spawner) {
         &mut control_buf,
     );
 
-    let mut keyboard = HidWriter::<_, 8>::new(
+    let mut keyboard = HidWriter::<_, 32>::new(
         &mut builder,
         &mut keyboard_state,
         hid::Config {
-            report_descriptor: KeyboardReport::desc(),
-            request_handler: None,
+            report_descriptor: keyboard::NKRO_DESCRIPTOR,
+            request_handler: Some(&mut keyboard_handler),
             poll_ms: 1,
-            max_packet_size: 8,
+            max_packet_size: 32,
             hid_subclass: HidSubclass::Boot,
             hid_boot_protocol: HidBootProtocol::Keyboard,
         },
@@ -248,7 +252,8 @@ async fn main(_spawner: Spawner) {
         let mut encoder = Encoder::new(rot_a.is_high(), rot_b.is_high());
         let mut engine = Engine::new();
         let mut hid_state = HidState::new();
-        let mut sent_keyboard = [0u8; 8];
+        // Last keyboard report sent, in whichever protocol was active.
+        let mut sent_keyboard: heapless::Vec<u8, NKRO_REPORT_LEN> = heapless::Vec::new();
         let mut sent_media = 0u16;
         let mut ticker = Ticker::every(Duration::from_millis(1));
         let mut last_activity = embassy_time::Instant::now();
@@ -296,9 +301,13 @@ async fn main(_spawner: Spawner) {
                 // Send after every output so a press+release pair (encoder
                 // tap) shows up as two separate reports.
                 hid_state.apply(output);
-                let r = hid_state.keyboard_report();
-                let k = r.keys;
-                let report = [r.modifiers, 0, k[0], k[1], k[2], k[3], k[4], k[5]];
+                let report: heapless::Vec<u8, NKRO_REPORT_LEN> = if keyboard::boot_protocol() {
+                    let r = hid_state.keyboard_report();
+                    let k = r.keys;
+                    heapless::Vec::from_slice(&[r.modifiers, 0, k[0], k[1], k[2], k[3], k[4], k[5]]).unwrap()
+                } else {
+                    heapless::Vec::from_slice(&hid_state.nkro_report()).unwrap()
+                };
                 if report != sent_keyboard {
                     let _ = keyboard.write(&report).await;
                     sent_keyboard = report;

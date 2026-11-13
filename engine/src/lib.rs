@@ -22,4 +22,4 @@ mod testutil;
 
 pub use config::*;
 pub use engine::{Engine, Event, Instant, KeyLight, Output};
-pub use hid::{HidState, KeyboardReport};
+pub use hid::{HidState, KeyboardReport, NKRO_REPORT_LEN};
