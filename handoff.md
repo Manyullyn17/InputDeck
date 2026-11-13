@@ -1,6 +1,6 @@
 # Macropad OS — Project Handoff
 
-**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, toggles, macros, USB keyboard/media output, OLED status screen, and configurable key LEDs. Configs are written in TOML, uploaded over USB with `mpcfg`, and stored in flash.  
+**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, toggles, macros, NKRO keyboard/media output, OLED status screen, configurable key LEDs, an onboard settings menu, and multiple profiles. Configs are written in TOML, uploaded over USB with `mpcfg`, and stored in flash.  
 **Hardware:** Adafruit MacroPad RP2040  
 **Last updated:** 2026-11-13
 
@@ -80,6 +80,7 @@ Key principles:
 - Toolchain pinned by `rust-toolchain.toml` (Rust 1.100.0 + `thumbv6m-none-eabi`), installed via rustup.
 - In `firmware/`: `cargo run --release`. The runner (`flash.sh`) asks running firmware to reboot into the bootloader (via `mpcfg`), waits for the drive, mounts it if needed, and flashes with `elf2uf2-rs`. Stored configs survive firmware updates.
 - Manual bootloader entry: **knob + keys 10 and 12** (hard-wired in firmware, independent of config), or hold the knob while plugging in.
+- Settings menu: **knob + keys 1 and 3** (hard-wired), or a `settings` binding. Keys are soft buttons (Cancel = key 10, Save = key 12); the knob navigates and adjusts.
 - The udev rule in `tools/udev/` gives the logged-in user access to the device's serial port.
 
 ### Configs
@@ -112,7 +113,8 @@ Key principles:
 | Config format | TOML with short binding strings for editing; versioned binary (postcard + CRC) on the device |
 | Config storage | Two alternating flash slots, verified after writing; fallback to built-in demo |
 | Config transfer | USB serial (CDC-ACM) with a small framed protocol |
-| Profiles | Format supports several; one used for now |
+| Profiles | Several per device (`mpcfg upload a.toml b.toml`), switched via the menu or `profile:next`/`profile:prev` bindings |
+| Onboard settings | Menu for brightness, LEDs, idle, held style, profile, info; changes saved to the active profile |
 | Desktop configuration | Companion application planned, not mandatory |
 | Onboard configuration | Simpler built-in interface planned |
 
@@ -135,8 +137,7 @@ Key principles:
 
 ### Onboard interface
 
-- How to enter and leave configuration mode.
-- Which settings are essential without a desktop (brightness, profile switching, simple key assignments).
+- Phase 2: assigning actions to keys on the device (deferred).
 
 ### Input and output
 
@@ -158,7 +159,7 @@ Key principles:
 7. ~~Configuration storage and format.~~
 8. ~~Toggles and macros.~~
 9. ~~NKRO keyboard report.~~
-10. **Basic onboard configuration** ← next
+10. ~~Basic onboard configuration (phase 1: settings menu, profiles).~~ Phase 2 (key editing on the device) deferred; likely better in the desktop app.
 11. Desktop companion application.
 12. Advanced configuration and visualization (layer graph, transition debugging, sequence replay).
 13. Quantum layer experiments, if desired.
