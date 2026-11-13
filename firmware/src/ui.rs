@@ -73,19 +73,30 @@ pub fn save_menu(storage: &RefCell<Storage>, config: &Config, menu: &Menu) -> (C
     (b.into_active_config().expect("active index was clamped"), notice)
 }
 
-/// Activates the next (`+1`) or previous (`-1`) profile. Returns the new
-/// config and its name, or `None` if there is only one profile.
-pub fn switch_profile(storage: &RefCell<Storage>, config: &Config, delta: i32) -> Option<(Config, String)> {
+/// A profile switch requested by a key binding.
+#[derive(Clone, Copy)]
+pub enum Switch {
+    /// Next (`+1`) or previous (`-1`), wrapping around.
+    Step(i32),
+    /// A specific profile by index.
+    To(u8),
+}
+
+/// Activates another profile. Returns the new config and its name, or a
+/// message for the display if there is nothing to switch to.
+pub fn switch_profile(storage: &RefCell<Storage>, config: &Config, switch: Switch) -> Result<(Config, String), String> {
     let mut b = bundle(storage, config);
     let n = b.profiles.len() as i32;
-    if n < 2 {
-        return None;
-    }
-    b.active = (b.active as i32 + delta).rem_euclid(n) as u8;
+    b.active = match switch {
+        Switch::Step(_) if n < 2 => return Err(String::from("Only one profile")),
+        Switch::Step(delta) => (b.active as i32 + delta).rem_euclid(n) as u8,
+        Switch::To(i) if i as i32 >= n => return Err(format!("No profile {}", i as u16 + 1)),
+        Switch::To(i) => i,
+    };
     let _ = storage.borrow_mut().save(&codec::encode(&b));
     let active = b.active as usize;
     let label = profile_label(&b.profiles[active], active);
-    Some((b.into_active_config()?, label))
+    b.into_active_config().map(|c| (c, label)).ok_or_else(|| String::from("Bad profile"))
 }
 
 /// Key LEDs while the menu is open. Normally at the edited brightness with

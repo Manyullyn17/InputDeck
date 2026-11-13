@@ -9,7 +9,7 @@
 //! | `latch:<action>` | hold `<action>` down until pressed again |
 //! | `repeat:<action>` / `repeat:<action>@<ms>` | tap `<action>` repeatedly (default every 100 ms) until pressed again |
 //! | `macro:<id>` | run macro `<id>` |
-//! | `settings`, `profile:next`, `profile:prev`, `bootloader` | device functions |
+//! | `settings`, `profile:next`, `profile:prev`, `profile:<n>` (1-based), `bootloader` | device functions |
 //! | `a`, `7`, `f5`, `enter`, `left`, `-`, ... | a key |
 //! | `ctrl+shift+t`, `rctrl+c`, `gui+space` | a key with modifiers |
 //! | `0x2c`, `ctrl+0x2c` | a raw HID keyboard usage |
@@ -128,8 +128,8 @@ const MEDIA: &[(&str, u16)] = &[
     ("vol-", 0xEA),
     ("voldown", 0xEA),
     ("mute", 0xE2),
-    ("play", 0xCD),
     ("playpause", 0xCD),
+    ("play", 0xCD),
     ("next", 0xB5),
     ("prev", 0xB6),
     ("stop", 0xB7),
@@ -235,6 +235,12 @@ pub fn parse_binding(
     }
     if let Some(&(_, action)) = SYSTEM.iter().find(|(name, _)| *name == l) {
         return Ok(KeyBinding::System(action));
+    }
+    if let Some(n) = l.strip_prefix("profile:") {
+        return match n.trim().parse::<u16>() {
+            Ok(n @ 1..=255) => Ok(KeyBinding::System(SystemAction::Profile((n - 1) as u8))),
+            _ => Err(ParseError::BadNumber),
+        };
     }
     if let Some(id) = t.strip_prefix("layer:") {
         return layer(id.trim()).map(KeyBinding::Layer).ok_or(ParseError::UnknownLayer);
@@ -379,6 +385,7 @@ pub fn write_binding<W: Write>(
             w.write_str("macro:")?;
             macro_(w, id)
         }
+        KeyBinding::System(SystemAction::Profile(i)) => write!(w, "profile:{}", i as u16 + 1),
         KeyBinding::System(action) => {
             let (name, _) = SYSTEM.iter().find(|(_, a)| *a == action).unwrap();
             w.write_str(name)
@@ -470,6 +477,13 @@ mod tests {
         assert_eq!(binding("macro:nope"), Err(ParseError::UnknownMacro));
         assert_eq!(binding("Settings"), Ok(KeyBinding::System(SystemAction::Settings)));
         assert_eq!(binding("profile:next"), Ok(KeyBinding::System(SystemAction::NextProfile)));
+        assert_eq!(binding("profile:1"), Ok(KeyBinding::System(SystemAction::Profile(0))));
+        assert_eq!(binding("Profile:12"), Ok(KeyBinding::System(SystemAction::Profile(11))));
+        assert_eq!(binding("profile:0"), Err(ParseError::BadNumber));
+        assert_eq!(binding("profile:256"), Err(ParseError::BadNumber));
+        let mut out = String::new();
+        write_binding(&mut out, KeyBinding::System(SystemAction::Profile(2)), |_, _| Ok(()), |_, _| Ok(())).unwrap();
+        assert_eq!(out, "profile:3");
     }
 
     #[test]
@@ -497,7 +511,7 @@ mod tests {
 
     #[test]
     fn format_parse_roundtrip() {
-        for text in ["a", "0", "f24", "ctrl+shift+t", "rgui+enter", "-", "0x64", "vol+", "media:0x183", "shift", "ctrl+alt"] {
+        for text in ["a", "0", "f24", "ctrl+shift+t", "rgui+enter", "-", "0x64", "vol+", "playpause", "media:0x183", "shift", "ctrl+alt"] {
             let action = parse_action(text).unwrap();
             let mut out = String::new();
             write_action(&mut out, action).unwrap();

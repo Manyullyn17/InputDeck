@@ -23,6 +23,8 @@ export interface Binding {
   macro: string;
   media: string;
   system: string;
+  /** 1-based profile number for the "profile" system function. */
+  profile: number;
   interval: number;
 }
 
@@ -45,12 +47,26 @@ const MOD_ALIASES: Record<string, string> = {
   super: "gui", win: "gui", cmd: "gui", lgui: "gui", altgr: "ralt",
 };
 
-export const MEDIA = ["vol+", "vol-", "mute", "play", "next", "prev", "stop", "bri+", "bri-"];
+export const MEDIA = [
+  { value: "playpause", label: "Play / Pause" },
+  { value: "next", label: "Next track" },
+  { value: "prev", label: "Previous track" },
+  { value: "stop", label: "Stop" },
+  { value: "vol+", label: "Volume up" },
+  { value: "vol-", label: "Volume down" },
+  { value: "mute", label: "Mute" },
+  { value: "bri+", label: "Screen brightness up" },
+  { value: "bri-", label: "Screen brightness down" },
+];
+/** Other accepted spellings, mapped to the names above. */
+const MEDIA_ALIASES: Record<string, string> = { play: "playpause", volup: "vol+", voldown: "vol-" };
+
 export const SYSTEM = [
-  { value: "settings", label: "Settings menu" },
+  { value: "settings", label: "Open settings menu" },
+  { value: "profile", label: "Switch to profile…" },
   { value: "profile:next", label: "Next profile" },
   { value: "profile:prev", label: "Previous profile" },
-  { value: "bootloader", label: "Bootloader" },
+  { value: "bootloader", label: "Reboot to bootloader" },
 ];
 
 /** Key names offered as suggestions. */
@@ -66,7 +82,7 @@ export const KEY_NAMES = [
 export const DEFAULT_REPEAT_MS = 100;
 
 function empty(kind: Kind): Binding {
-  return { kind, key: "", mods: [], layer: "", macro: "", media: "vol+", system: "settings", interval: DEFAULT_REPEAT_MS };
+  return { kind, key: "", mods: [], layer: "", macro: "", media: "playpause", system: "settings", profile: 1, interval: DEFAULT_REPEAT_MS };
 }
 
 function splitKey(text: string): { key: string; mods: string[] } {
@@ -90,8 +106,11 @@ export function parse(raw: string): Binding {
   const l = t.toLowerCase();
   if (l === "_") return empty("inherit");
   if (l === "" || l === "none") return empty("none");
-  if (SYSTEM.some((s) => s.value === l)) return { ...empty("system"), system: l };
-  if (MEDIA.includes(l)) return { ...empty("media"), media: l };
+  if (l !== "profile" && SYSTEM.some((s) => s.value === l)) return { ...empty("system"), system: l };
+  const profile = /^profile:\s*(\d+)$/.exec(l);
+  if (profile) return { ...empty("system"), system: "profile", profile: parseInt(profile[1], 10) };
+  const media = MEDIA_ALIASES[l] ?? l;
+  if (MEDIA.some((m) => m.value === media)) return { ...empty("media"), media };
   const prefixed = (p: string) => (t.startsWith(p) ? t.slice(p.length).trim() : null);
   let rest: string | null;
   if ((rest = prefixed("layer:")) !== null) return { ...empty("layer"), layer: rest };
@@ -122,7 +141,7 @@ export function format(b: Binding): string {
     case "latch": return `latch:${keyText(b)}`;
     case "repeat": return `repeat:${keyText(b)}@${b.interval}`;
     case "macro": return `macro:${b.macro}`;
-    case "system": return b.system;
+    case "system": return b.system === "profile" ? `profile:${b.profile}` : b.system;
   }
 }
 

@@ -13,6 +13,7 @@
 #   macro:<id>        run a macro (see [macros] at the bottom)
 #   settings          open the onboard settings menu
 #   profile:next, profile:prev   switch between uploaded profiles
+#   profile:2                    jump to a specific profile (its position on the device)
 #   bootloader        reboot into the firmware bootloader
 #   a, 7, f5, enter, esc, space, tab, backspace, up, left, home, pgup, -, [, ...
 #   ctrl+c, shift+alt+t, gui+space, rctrl+x   keys with modifiers

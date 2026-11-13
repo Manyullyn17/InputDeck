@@ -308,7 +308,7 @@ async fn main(_spawner: Spawner) {
             // (a dropped release would leave a key stuck).
             let mut outputs: alloc::vec::Vec<Output> = alloc::vec::Vec::new();
             let mut open_settings = menu.is_none() && SETTINGS_COMBO.iter().all(|&b| debouncer.is_pressed(b));
-            let mut switch: Option<i32> = None;
+            let mut switch: Option<ui::Switch> = None;
             let mut replace_config: Option<(Config, Option<String>)> = None;
 
             // A newly uploaded config: leave the menu, release everything, swap.
@@ -383,20 +383,21 @@ async fn main(_spawner: Spawner) {
                 for output in &outputs {
                     match output {
                         Output::System(SystemAction::Settings) => open_settings = true,
-                        Output::System(SystemAction::NextProfile) => switch = Some(1),
-                        Output::System(SystemAction::PrevProfile) => switch = Some(-1),
+                        Output::System(SystemAction::NextProfile) => switch = Some(ui::Switch::Step(1)),
+                        Output::System(SystemAction::PrevProfile) => switch = Some(ui::Switch::Step(-1)),
+                        Output::System(SystemAction::Profile(i)) => switch = Some(ui::Switch::To(*i)),
                         Output::System(SystemAction::Bootloader) => embassy_rp::rom_data::reset_to_usb_boot(0, 0),
                         _ => {}
                     }
                 }
             }
 
-            if let Some(delta) = switch {
-                let switched = ui::switch_profile(&store, &config.borrow(), delta);
+            if let Some(switch) = switch {
+                let switched = ui::switch_profile(&store, &config.borrow(), switch);
                 match switched {
-                    Some((next, name)) => replace_config = Some((next, Some(name))),
-                    None => {
-                        notice = Some((String::from("Only one profile"), now.0 + NOTICE_MS));
+                    Ok((next, name)) => replace_config = Some((next, Some(name))),
+                    Err(text) => {
+                        notice = Some((text, now.0 + NOTICE_MS));
                         screen_dirty = true;
                     }
                 }

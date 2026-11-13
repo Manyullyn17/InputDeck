@@ -27,11 +27,13 @@ pub fn write_binding(w: &mut impl Write, config: &Config, binding: KeyBinding) -
             w.write_char('*')?;
             write_action(w, action)
         }
+        KeyBinding::System(SystemAction::Profile(i)) => write!(w, "Prof{}", i as u16 + 1),
         KeyBinding::System(action) => w.write_str(match action {
             SystemAction::Settings => "Setup",
             SystemAction::NextProfile => "Prof+",
             SystemAction::PrevProfile => "Prof-",
             SystemAction::Bootloader => "Boot",
+            SystemAction::Profile(_) => unreachable!(),
         }),
         KeyBinding::Macro(id) => match config.macro_(id) {
             Some(m) if !m.name.is_empty() => w.write_str(&m.name),
@@ -201,5 +203,6 @@ mod tests {
         assert_eq!(label(KeyBinding::Toggle(Toggle::Repeat { action: a, interval_ms: 10 })), "*A");
         assert_eq!(label(KeyBinding::Macro(MacroId(0))), "Hi");
         assert_eq!(label(KeyBinding::None), "");
+        assert_eq!(label(KeyBinding::System(SystemAction::Profile(1))), "Prof2");
     }
 }

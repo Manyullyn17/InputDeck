@@ -70,15 +70,13 @@ impl Simulator {
                 let _ = label::write_layer(&mut name, &self.config, id);
                 format!("→ layer {name}")
             }
-            Output::System(a) => format!(
-                "⚙ {}",
-                match a {
-                    SystemAction::Settings => "settings menu",
-                    SystemAction::NextProfile => "next profile",
-                    SystemAction::PrevProfile => "previous profile",
-                    SystemAction::Bootloader => "bootloader",
-                }
-            ),
+            Output::System(a) => match a {
+                SystemAction::Settings => "⚙ settings menu".into(),
+                SystemAction::NextProfile => "⚙ next profile".into(),
+                SystemAction::PrevProfile => "⚙ previous profile".into(),
+                SystemAction::Bootloader => "⚙ bootloader".into(),
+                SystemAction::Profile(i) => format!("⚙ profile {}", i as u16 + 1),
+            },
         };
         if self.log.len() == LOG_LEN {
             self.log.pop_front();

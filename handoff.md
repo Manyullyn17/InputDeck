@@ -113,7 +113,7 @@ Key principles:
 | Config format | TOML with short binding strings for editing; versioned binary (postcard + CRC) on the device |
 | Config storage | Two alternating flash slots, verified after writing; fallback to built-in demo |
 | Config transfer | USB serial (CDC-ACM) with a small framed protocol |
-| Profiles | Several per device (`mpcfg upload a.toml b.toml`), switched via the menu or `profile:next`/`profile:prev` bindings |
+| Profiles | Several per device (`mpcfg upload a.toml b.toml`), switched via the menu or `profile:next`/`profile:prev`/`profile:<n>` bindings |
 | Onboard settings | Menu for brightness, LEDs, idle, held style, profile, info; changes saved to the active profile |
 | Desktop configuration | Companion application planned, not mandatory |
 | Onboard configuration | Simpler built-in interface planned |

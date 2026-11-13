@@ -71,7 +71,7 @@
         <li class:active={i === info.active}>
           <div class="name">
             <span class="dot">{i === info.active ? "●" : "○"}</span>
-            {p.name} <span class="muted">· {p.layers} layers</span>
+            <span class="muted">{i + 1}.</span> {p.name} <span class="muted">· {p.layers} layers</span>
           </div>
           <div class="btns">
             <button onclick={() => act(() => api.deviceActivate(i), "Activated")} disabled={busy || i === info.active}>Activate</button>

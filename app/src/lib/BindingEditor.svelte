@@ -112,7 +112,7 @@
       <label class="row">
         <span>Media key</span>
         <select value={form.media} onchange={(e) => update({ media: e.currentTarget.value })}>
-          {#each MEDIA as m}<option value={m}>{m}</option>{/each}
+          {#each MEDIA as m}<option value={m.value}>{m.label}</option>{/each}
         </select>
       </label>
     {:else if form.kind === "layer" || form.kind === "toggle"}
@@ -140,6 +140,19 @@
           {#each SYSTEM as s}<option value={s.value}>{s.label}</option>{/each}
         </select>
       </label>
+      {#if form.system === "profile"}
+        <label class="row">
+          <span>Profile</span>
+          <input
+            type="number"
+            min="1"
+            max="255"
+            value={form.profile}
+            oninput={(e) => update({ profile: Math.min(255, Math.max(1, parseInt(e.currentTarget.value, 10) || 1)) })}
+          />
+          <span class="unit">position in the device's profile list</span>
+        </label>
+      {/if}
     {:else if form.kind === "inherit"}
       <p class="muted">Uses the parent layer's binding (actions only; layer keys aren't inherited).</p>
     {:else}

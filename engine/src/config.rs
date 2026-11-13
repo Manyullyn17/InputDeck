@@ -105,6 +105,8 @@ pub enum SystemAction {
     PrevProfile,
     /// Reboot into the UF2 bootloader.
     Bootloader,
+    /// Activate the profile at this index (0-based; `profile:1` is index 0).
+    Profile(u8),
 }
 
 impl KeyBinding {
