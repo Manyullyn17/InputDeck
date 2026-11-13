@@ -1,376 +1,162 @@
 # Macropad OS — Project Handoff
 
-**Project status:** Early concept / exploratory design  
+**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, USB keyboard/media output, OLED status screen, and configurable key LEDs, all driven by a hard-coded demo config.  
 **Hardware:** Adafruit MacroPad RP2040  
-**Specification status:** Core concepts and intended user experience partially defined. Firmware architecture and implementation details largely open.
+**Last updated:** 2026-11-13
 
 ---
 
 ## 1. Project Overview
 
-Macropad OS is a project to create a custom software environment for the Adafruit MacroPad RP2040.
+Macropad OS is a custom software environment for the Adafruit MacroPad RP2040.
 
-The central idea is to go beyond conventional macropad functionality.
+The central idea is to go beyond conventional macropad functionality. Rather than assigning one action to each physical key, it uses a stateful input system with dynamically changing layers, so a small number of physical inputs can represent a much larger set of logical inputs.
 
-Rather than simply assigning one action to each physical key, the project uses a stateful input system with dynamically changing layers.
+Defining aspects:
 
-The goal is to make a relatively small number of physical inputs capable of representing a much larger set of logical inputs.
+- **Meta layers:** ordered, state-dependent layer stacking. The order in which layer keys are pressed matters, and each layer decides what every key (including other layer keys) means.
+- **Configuration:** a desktop companion app for extensive configuration, plus a simpler onboard interface. The desktop app is not required to use the device.
+- **Rich feedback:** the OLED and per-key RGB LEDs show the current state.
 
-Two particularly important aspects are:
+Quantum layers (key releases triggering transitions) remain an optional future experiment, not a V1 requirement.
 
-- **Meta layers:** A fundamental feature involving ordered, state-dependent layer stacking.
-- **Configuration:** A desktop companion application for more extensive configuration, complemented by a simpler configuration interface directly on the device.
+## 2. Design Documents
 
-Quantum layers are another interesting concept, but remain an optional future experiment rather than a V1 requirement.
+| Document | Contents |
+| --- | --- |
+| [meta-layers.md](meta-layers.md) | Meta layer semantics: layers, fallthrough, global keys, the layer-path stack, held keys across layer switches |
+| [leds.md](leds.md) | Key LED color resolution, key states, brightness, idle dimming |
+| [actions.md](actions.md) | Toggles and macros (designed, not implemented) |
 
-The project is still in an early design phase. There is no complete technical specification or finalized architecture yet.
+## 3. Hardware
 
-## 2. Hardware
+**Adafruit MacroPad RP2040**: RP2040, 12 mechanical keys (4×3), rotary encoder with push button, 128×64 monochrome OLED (SH1106), 12 RGB LEDs (one per key, none for the encoder), USB-C, STEMMA QT, speaker, red status LED, 8 MB flash.
 
-The hardware is confirmed:
+Pin assignments used by the firmware:
 
-**Adafruit MacroPad RP2040 kit**
+| Function | Pins |
+| --- | --- |
+| Keys 1–12 (row-major from top-left, active low) | GPIO1–12 |
+| Encoder button | GPIO0 |
+| Encoder A / B | GPIO17 / GPIO18 |
+| Key LEDs (WS2812, GRB) | GPIO19 |
+| OLED (SPI1) | SCK 26, MOSI 27, CS 22, RST 23, DC 24 |
+| Red status LED | GPIO13 |
 
-Specifications:
-- Microcontroller: Raspberry Pi RP2040
-- Physical keys: 12 mechanical switches arranged in a 4×3 grid
-- Rotary encoder: One knob with push-button functionality
-- Display: 128×64 monochrome OLED
-- Connectivity: USB-C
-- Additional hardware: NeoPixel LEDs and STEMMA QT connector
+Encoder: 4 quadrature steps per detent; the decoder's raw direction is inverted relative to the physical rotation.
 
-The board provides:
-- 12 independently addressable physical keys
-- Rotary encoder input
-- Encoder push-button input
-- OLED display for dynamic information
+## 4. Software Architecture
 
-The display and encoder are particularly useful because they provide more than just additional inputs: they allow the device to display its current state and provide contextual navigation or adjustment.
+Rust, as a Cargo workspace with the firmware as a separate workspace:
 
----
+```text
+engine/     no_std library, no hardware code; shared by firmware and future desktop app
+  config.rs   config data model, fallthrough resolution, validation
+  engine.rs   state machine: events in, outputs out
+  hid.rs      engine outputs -> USB HID report contents
+  label.rs    short labels for bindings (OLED, later desktop app)
+  led.rs      key LED color resolution, brightness, gamma, current limit
+firmware/   embassy-rp firmware for the RP2040 (own workspace)
+  main.rs     USB, scan loop, display and LED loops, idle handling
+  input.rs    debouncing (1 ms polling, 5 ms) and encoder decoding
+  display.rs  SH1106 driver and status screen
+  demo.rs     hard-coded demo config (until config storage exists)
+```
 
-## 3. Core Feature: Meta Layers
+Key principles:
 
-Meta layers are one of the defining concepts of Macropad OS and a fundamental V1 requirement.
+- The engine is pure: `(state, event, time) -> (state, outputs)`. Everything about semantics is unit-tested on the host (`cargo test` at the repo root).
+- The firmware is thin: hardware to events, engine outputs to USB/OLED/LEDs.
+- Display and LED updates run concurrently with scanning (DMA/PIO) and only ever show the latest state.
 
-The basic idea is that layer transitions are ordered and state-dependent.
+### Building and flashing
 
-For example:
+- Toolchain pinned by `rust-toolchain.toml` (Rust 1.100.0 + `thumbv6m-none-eabi`), installed via rustup.
+- In `firmware/`: `cargo run --release`. The runner (`flash.sh`) waits for the bootloader drive, mounts it if needed, and flashes with `elf2uf2-rs`.
+- Enter the bootloader with **knob + keys 10 and 12** (hard-wired in firmware, independent of config), or by holding the knob while plugging in.
 
-- M1 → M2
-- M2 → M1
-
-These are distinct sequences and can result in different logical states.
-
-This differs from conventional modifier systems where active modifiers are generally treated as an unordered combination.
-
-The order in which layers are activated matters.
-
-Additionally, changing layers can change the meaning of other layer-switching keys.
-
-A key that activates M2 in one state might activate something entirely different in another state.
-
-This makes the system fundamentally state-dependent.
-
-Meta layers are not simply multiple simultaneously enabled keymaps. Their ordering and transition history are meaningful parts of the resulting state.
-
-**Important:** Meta layers are intended to be included in the initial usable version, not postponed as an experimental feature.
-
-### Questions still open
-
-- What exactly constitutes a meta layer?
-- How are meta layers represented internally?
-- Are transitions always additive, or can they replace existing state?
-- How should returning to previous states work?
-- Can meta layers be explicitly named and configured?
-- How should held keys behave across transitions?
-- What happens when multiple transitions are triggered in quick succession?
-
-These details need to be established during implementation and experimentation.
-
----
-
-## 4. Experimental Concept: Quantum Layers
-
-Quantum layers are an additional concept worth keeping open for future experimentation.
-
-They are not a V1 requirement.
-
-The idea is that key releases can participate in layer transitions just like key presses.
-
-A physical key therefore doesn't necessarily have one fixed meaning throughout its entire press/release lifecycle.
-
-For example:
-
-1. Press M1.
-2. The system transitions into layer M1.
-3. Press another key while M1 is active.
-4. Release M1.
-5. The release event triggers another layer transition.
-
-This allows the system to use both key-down and key-up events as meaningful inputs for state transitions.
-
-The interesting implication is that a key's release can be interpreted in the context of a state that is different from the state in which it was pressed.
-
-An eventual consequence of this and ordered transitions could be an indefinitely extensible sequence of logical inputs using only a handful of physical keys.
-
-However, this is an experimental direction, not something the initial implementation needs to support.
-
-**V1 priority:** Get meta layers working correctly without requiring quantum layer mechanics.
-
-The architecture should ideally avoid making future experimentation unnecessarily difficult, but should not be complicated just to accommodate an unproven feature.
-
----
-
-## 5. Configuration System
-
-Configuration is an important part of the intended product.
-
-The project is intended to have two complementary configuration interfaces.
-
-### 5.1 Desktop Companion Application
-
-A desktop application will provide a more extensive and convenient way to configure Macropad OS.
-
-Its purpose is to make configuring a potentially complex layer system manageable.
-
-Potential functionality:
-- Configure physical key assignments.
-- Create and edit layers.
-- Configure meta layer behavior and transitions.
-- Configure encoder behavior.
-- Customize display-related settings.
-- Manage and transfer configurations to the device.
-- Potentially visualize the layer structure and relationships.
-
-The desktop application should make complex configurations easier to understand and edit.
-
-The exact platform, framework, communication protocol, and feature scope are undecided.
-
-### 5.2 Onboard Configuration
-
-The device should also have a simpler built-in configuration interface.
-
-This interface uses the physical buttons, rotary encoder, and OLED display.
-
-The intention is that basic configuration and adjustments should be possible without requiring a connected desktop application.
-
-Potential functionality:
-- Navigate configuration menus.
-- Change basic key assignments.
-- Switch or select configurations.
-- Adjust basic settings.
-- Perform simple layer-related configuration.
-
-The onboard interface does not necessarily need to expose every advanced configuration option available in the desktop application.
-
-**Important distinction:** The desktop app is the more comprehensive configuration tool, not a mandatory dependency for configuring or using the device.
-
-The exact division of functionality between the two interfaces remains open.
-
----
-
-## 6. Display and User Interface
-
-The OLED display should provide useful feedback about the device's current state.
-
-Potential uses:
-- Display the currently active logical state.
-- Show the current interpretation of all 12 keys.
-- Display layer names and contextual information.
-- Show which keys are currently held.
-- Provide visual feedback when a transition occurs.
-- Display onboard configuration menus.
-
-One particularly interesting idea is to show the current interpretation of the physical keys rather than displaying a static keymap.
-
-This would make dynamically changing meta layers much easier to understand.
-
-The rotary encoder could be used for contextual navigation, value adjustment, and interacting with onboard configuration.
-
----
-
-## 7. General Software Design Implications
-
-The concepts suggest that the firmware should be designed around an event-driven state machine.
-
-Physical input events should be processed in sequence, with the current state determining how each event is interpreted.
-
-Relevant event types include:
-- Key down
-- Key up
-- Encoder clockwise rotation
-- Encoder counterclockwise rotation
-- Encoder button down
-- Encoder button up
-
-Important considerations:
-
-- Event ordering must be preserved.
-- Meta layer transitions must be deterministic.
-- Held keys must remain tracked across layer changes.
-- The meaning of an input may depend on the current state.
-- State transitions should be independently testable.
-- The configuration system must be able to represent the meta layer model.
-
-A conventional implementation might use an event queue and a state-transition function, but the exact architecture is undecided.
-
-The configuration representation should ideally be designed alongside the state model rather than bolted on afterward.
-
----
-
-## 8. Potential Development and Debugging Features
-
-These are ideas worth considering, not finalized requirements.
-
-### Layer Visualization
-Visualize the current state and how each physical input is interpreted.
-
-### Transition Debugging
-Record physical events and resulting logical state transitions.
-
-### Sequence Replay
-Allow recorded input sequences to be replayed to reproduce unexpected behavior.
-
-### Layer Graph
-Visualize reachable states and transitions as a graph.
-
-### State-Machine Testing
-Test different combinations and orderings of key presses and releases, particularly overlapping held keys.
-
-### Configuration Validation
-Validate configurations before transferring them to the device, especially when they contain complex meta layer relationships.
-
----
-
-## 9. Confirmed Decisions vs. Open Questions
-
-### Confirmed
+## 5. Confirmed Decisions
 
 | Subject | Decision |
-|---|---|
+| --- | --- |
 | Project name | Macropad OS |
 | Hardware | Adafruit MacroPad RP2040 |
-| Microcontroller | RP2040 |
-| Physical layout | 4×3 keys |
-| Additional input | Rotary encoder with push button |
-| Display | 128×64 OLED |
-| Core input system | Stateful, dynamically changing layers |
-| Meta layers | Fundamental V1 feature |
-| Meta layer behavior | Ordered and state-dependent |
+| Language | Rust; engine shared between firmware and desktop app |
+| Firmware framework | embassy-rp |
+| Meta layers | V1 feature; semantics in [meta-layers.md](meta-layers.md) |
+| Layer keys | Hold-only in V1; tap/hold behaviors are a later expansion for any key type |
+| Fallthrough | Fixed parent per layer; passes down actions only, not layer keys |
+| Global keys | Apply where the current layer inherits; explicit bindings win |
+| Held keys | Keep their original action until released |
+| USB output | Boot keyboard (6KRO) + consumer control (media keys) |
+| OLED | Layer path header + 4×3 grid of effective bindings, held keys inverted |
+| Key LEDs | Configurable per key / per layer / globally; see [leds.md](leds.md) |
+| Idle | LEDs and OLED dim, then turn off; any input wakes without being swallowed |
+| Toggles | Key latch, key repeat, layer toggle as separate types; see [actions.md](actions.md) |
+| Macros | Down/up/delay/text steps; one-shot, repeat-while-held, toggle; see [actions.md](actions.md) |
 | Quantum layers | Optional future experiment, not V1 |
-| Meta layer semantics | Defined in [meta-layers.md](meta-layers.md) |
-| Firmware language | Rust (shared engine crate between firmware and desktop) |
-| Desktop configuration | Companion application planned |
+| Desktop configuration | Companion application planned, not mandatory |
 | Onboard configuration | Simpler built-in interface planned |
-| Project maturity | Early design phase |
 
-### Open Questions
+## 6. Open Questions
 
-**Firmware and runtime**
-- Which programming language should be used?
-- Which framework or SDK should be used?
-- Arduino ecosystem, Pico SDK, or another approach?
-- How should the event-processing loop work?
-- How should state be represented internally?
+### Configuration storage and transfer (next major step)
 
-**Meta layer system**
-- Exact semantics and internal representation.
-- How transitions are defined and resolved.
-- How previous states are restored or exited.
-- How overlapping held keys are handled.
-- Whether there are restrictions on reachable states.
-- How invalid or unreachable configurations are handled.
+- Binary or text format on the device? How is it versioned so older configs keep working?
+- Where in flash, and how are writes made safe against power loss?
+- How does the desktop app talk to the device (e.g. USB serial or a vendor HID interface)?
+- Multiple profiles?
+- Layer names.
 
-**Configuration**
-- How should configurations be stored?
-- What configuration format should be used?
-- How does the desktop app communicate with the device?
-- How are configurations transferred and validated?
-- Which features are available onboard versus exclusively in the desktop app?
-- Can configurations be backed up, exported, and imported?
-- Should multiple configurations/profiles be supported?
+### Toggles and macros
 
-**Desktop application**
-- Which operating systems should be supported?
-- Which framework and programming language?
-- How should the UI represent meta layers?
-- Should there be a graphical layer editor?
-- How should device connection and configuration synchronization work?
+- See the open and proposed items in [actions.md](actions.md), in particular how layer toggles fit into the layer path and how text typing handles keyboard layouts.
 
-**Onboard interface**
-- What should the default screen show?
-- How should menus and navigation work?
-- Which configuration options are essential without a desktop?
-- How should the user return to normal operation from configuration mode?
+### Desktop application
 
-**Input and output**
-- Keyboard HID, consumer control, other HID interfaces, or a combination?
-- How should encoder events interact with layers?
-- Should the encoder have contextual behavior?
-- How should simultaneous inputs be handled?
+- Platforms, framework (the Rust engine suggests e.g. Tauri, or a web app via WebAssembly).
+- How to visualize and edit meta layers and their relationships.
 
-**Reliability and testing**
-- How should stuck-key scenarios be handled?
-- What happens if power is lost while keys are held?
-- How should state reset work?
-- How can complex transition sequences be tested systematically?
+### Onboard interface
 
-**Future scope**
-- How might quantum layers eventually fit into the architecture?
-- Should user-defined applications or modes be separate concepts?
-- How much functionality belongs in firmware versus the desktop application?
+- How to enter and leave configuration mode.
+- Which settings are essential without a desktop (brightness, profile switching, simple key assignments).
 
----
+### Input and output
 
-## 10. Suggested Development Direction
+- Should the encoder participate in layers beyond per-layer rotation bindings (e.g. as a layer key)? It already can, as button 13.
+- Use of the speaker and STEMMA QT port.
 
-A sensible eventual development sequence:
+### Reliability
 
-1. Get the board running custom firmware.
-2. Implement basic key, encoder, and display handling.
-3. Establish the event-processing and state-transition model.
-4. Define and implement meta layer semantics.
-5. Test complex layer transitions and overlapping inputs.
-6. Design a configuration representation capable of expressing meta layers.
-7. Implement basic onboard configuration.
-8. Develop the desktop companion application.
-9. Add more advanced configuration and visualization features.
-10. Experiment with quantum layers independently if desired.
+- Stuck-key handling beyond `Engine::reset` (which exists but has no trigger yet).
 
-The underlying state model and configuration format are particularly important architectural decisions. Both configuration interfaces will depend on them.
+## 7. Development Progress
 
----
+1. ~~Get the board running custom firmware.~~
+2. ~~Basic key, encoder, and display handling.~~
+3. ~~Event-processing and state-transition model.~~
+4. ~~Meta layer semantics.~~
+5. ~~Test complex layer transitions and overlapping inputs.~~ (host tests + on-device checks)
+6. ~~Key LEDs and idle dimming.~~
+7. **Configuration storage and format** ← next
+8. Toggles and macros.
+9. Basic onboard configuration.
+10. Desktop companion application.
+11. Advanced configuration and visualization (layer graph, transition debugging, sequence replay).
+12. Quantum layer experiments, if desired.
 
-## 11. Project Philosophy
+## 8. Project Philosophy
 
-The interesting part of Macropad OS isn't simply having 12 programmable keys.
+The interesting part of Macropad OS isn't having 12 programmable keys. It's exploring how far a small physical input surface can be extended through a more expressive logical input system.
 
-It's exploring how far a small physical input surface can be extended through a more expressive logical input system.
+Meta layers are central to that vision. The desktop app and onboard configuration should make that flexibility accessible without requiring users to reason through every possible state transition.
 
-**Meta layers are central to that vision.** Their ordered, state-dependent behavior is a fundamental part of the project.
+The project should avoid prematurely constraining itself to conventional macropad behavior while keeping the system understandable, deterministic, and configurable.
 
-The desktop companion application and onboard configuration interface should make that flexibility accessible without requiring users to manually reason through every possible state transition.
-
-Quantum layers are an interesting possibility for pushing the system further, but shouldn't dictate the initial architecture or delay V1.
-
-The project should avoid prematurely constraining itself to conventional macropad behavior while keeping the underlying system understandable, deterministic, and configurable.
-
-**Current priority:** Establish the core meta layer model and a configuration architecture that supports both desktop and onboard configuration.
-
----
-
-## 12. Important Context for Future Work
+## 9. Context for Future Work
 
 - This project is separate from the user's other hardware and software projects.
-- The Adafruit MacroPad RP2040 is the confirmed target hardware.
-- Meta layers are a fundamental V1 requirement.
-- Quantum layers are experimental and explicitly not a V1 requirement.
-- A desktop companion configuration application is planned.
-- A simpler onboard configuration interface is also planned.
-- The desktop application should not be mandatory for basic configuration.
-- Most implementation details remain undecided.
-- Suggestions must be distinguished from established decisions.
-- Avoid turning the early concept into an unnecessarily rigid specification.
-
-The project is intentionally still exploratory.
+- Suggestions must be distinguished from established decisions; design docs mark items as decided, proposed, or open.
+- Avoid turning the concept into an unnecessarily rigid specification.
+- The user knows Python and chose Rust partly for the learning experience; explain non-obvious Rust concepts briefly.
