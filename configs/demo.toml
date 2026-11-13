@@ -99,7 +99,7 @@ keys = [
 name = "Tools"
 keys = [
   "macro:hello",  "macro:ticker",       "latch:shift",
-  "repeat:b@250", "macro:hold_x",       "macro:shout",
+  "repeat:b@250", "macro:word_skip",    "macro:shout",
   "_",            "_",                  "_",
   "_",            "_",                  "_",
 ]
@@ -121,10 +121,10 @@ name = "Tick"
 type = "toggle"
 steps = ["text:tick ", "delay:500"]
 
-[macros.hold_x]
-name = "Hold x"
+[macros.word_skip]
+name = "Words"
 type = "while_held"
-steps = ["x", "delay:150"]
+steps = ["ctrl+right", "delay:120"]   # jump word by word while held
 
 [macros.shout]
 name = "Shout"

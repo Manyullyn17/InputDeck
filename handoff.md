@@ -1,6 +1,6 @@
 # Macropad OS — Project Handoff
 
-**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, USB keyboard/media output, OLED status screen, and configurable key LEDs. Configs are written in TOML, uploaded over USB with `mpcfg`, and stored in flash.  
+**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, toggles, macros, USB keyboard/media output, OLED status screen, and configurable key LEDs. Configs are written in TOML, uploaded over USB with `mpcfg`, and stored in flash.  
 **Hardware:** Adafruit MacroPad RP2040  
 **Last updated:** 2026-11-13
 
@@ -26,7 +26,7 @@ Quantum layers (key releases triggering transitions) remain an optional future e
 | --- | --- |
 | [meta-layers.md](meta-layers.md) | Meta layer semantics: layers, fallthrough, global keys, the layer-path stack, held keys across layer switches |
 | [leds.md](leds.md) | Key LED color resolution, key states, brightness, idle dimming |
-| [actions.md](actions.md) | Toggles and macros (designed, not implemented) |
+| [actions.md](actions.md) | Toggles and macros |
 
 ## 3. Hardware
 
@@ -126,7 +126,8 @@ Key principles:
 
 ### Toggles and macros
 
-- See the open and proposed items in [actions.md](actions.md), in particular how layer toggles fit into the layer path and how text typing handles keyboard layouts.
+- Remaining open items in [actions.md](actions.md): a "turn off all toggles" action, macros triggering layer changes.
+- Optional `eurkey` text layout (the user's layout is EurKEY; `us` covers everything except its AltGr characters).
 
 ### Desktop application
 
@@ -156,11 +157,12 @@ Key principles:
 5. ~~Test complex layer transitions and overlapping inputs.~~ (host tests + on-device checks)
 6. ~~Key LEDs and idle dimming.~~
 7. ~~Configuration storage and format.~~
-8. **Toggles and macros** ← next
-9. Basic onboard configuration.
-10. Desktop companion application.
-11. Advanced configuration and visualization (layer graph, transition debugging, sequence replay).
-12. Quantum layer experiments, if desired.
+8. ~~Toggles and macros.~~
+9. **NKRO keyboard report** (remove the 6-key limit) ← next
+10. Basic onboard configuration.
+11. Desktop companion application.
+12. Advanced configuration and visualization (layer graph, transition debugging, sequence replay).
+13. Quantum layer experiments, if desired.
 
 ## 8. Project Philosophy
 

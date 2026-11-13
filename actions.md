@@ -1,6 +1,6 @@
 # Toggles and Macros
 
-Design discussion (2026-11). Nothing here is implemented yet. "Decided" items come from the user; "Proposed" items are suggestions awaiting confirmation; "Open" items are deliberately undecided.
+Design discussion (2026-11). Implemented in `engine/src/engine.rs` (runtime) and `engine/src/layout.rs` (text layouts: `us`, `de`). "Decided" items come from the user; "Proposed" items are suggestions awaiting confirmation; "Open" items are deliberately undecided.
 
 ## Toggles
 
@@ -67,9 +67,14 @@ LEDs: a running one-shot uses the held color until it finishes; an active toggle
 - Text typing has a default delay between characters, overridable per macro.
 - Characters that don't exist in the selected layout are reported by config validation.
 
+### Decided (concurrency)
+
+- Several macros can run at once (up to 8); each macro runs at most once at a time.
+- Text is typed with exactly the modifiers each character needs; other held modifiers (latches, other macros, physical keys) are suppressed for that keystroke. Down/up/tap steps combine with held modifiers on purpose.
+- A key pressed by two sources stays down until both release it; a tap of an already-held key is not seen by the computer. Left as is.
+
 ### Open
 
-- Whether several macros can run at the same time, and what happens when a macro and a held key press the same key.
 - Whether macros can trigger layer changes, or only send keys.
 
 ## Engine implications
