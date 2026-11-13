@@ -101,7 +101,7 @@ Key principles:
 | Fallthrough | Fixed parent per layer; passes down actions only, not layer keys |
 | Global keys | Apply where the current layer inherits; explicit bindings win |
 | Held keys | Keep their original action until released |
-| USB output | Boot keyboard (6KRO) + consumer control (media keys) |
+| USB output | NKRO keyboard (bitmap, any number of keys) with 6KRO boot-protocol fallback + consumer control (media keys) |
 | OLED | Layer path header + 4×3 grid of effective bindings, held keys inverted |
 | Key LEDs | Configurable per key / per layer / globally; see [leds.md](leds.md) |
 | Idle | LEDs and OLED dim, then turn off; any input wakes without being swallowed |
@@ -158,8 +158,8 @@ Key principles:
 6. ~~Key LEDs and idle dimming.~~
 7. ~~Configuration storage and format.~~
 8. ~~Toggles and macros.~~
-9. **NKRO keyboard report** (remove the 6-key limit) ← next
-10. Basic onboard configuration.
+9. ~~NKRO keyboard report.~~
+10. **Basic onboard configuration** ← next
 11. Desktop companion application.
 12. Advanced configuration and visualization (layer graph, transition debugging, sequence replay).
 13. Quantum layer experiments, if desired.
