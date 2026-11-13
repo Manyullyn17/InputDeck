@@ -2,6 +2,8 @@
 // side (engine/src/notation.rs) is the authority and validates everything;
 // this only splits strings into editable parts.
 
+import { MEDIA_KEYS } from "./keys";
+
 export type Kind =
   | "inherit"
   | "none"
@@ -47,17 +49,8 @@ const MOD_ALIASES: Record<string, string> = {
   super: "gui", win: "gui", cmd: "gui", lgui: "gui", altgr: "ralt",
 };
 
-export const MEDIA = [
-  { value: "playpause", label: "Play / Pause" },
-  { value: "next", label: "Next track" },
-  { value: "prev", label: "Previous track" },
-  { value: "stop", label: "Stop" },
-  { value: "vol+", label: "Volume up" },
-  { value: "vol-", label: "Volume down" },
-  { value: "mute", label: "Mute" },
-  { value: "bri+", label: "Screen brightness up" },
-  { value: "bri-", label: "Screen brightness down" },
-];
+/** Media keys as {value, label}, from the key catalog. */
+export const MEDIA = MEDIA_KEYS.map((k) => ({ value: k.name, label: k.label }));
 /** Other accepted spellings, mapped to the names above. */
 const MEDIA_ALIASES: Record<string, string> = { play: "playpause", volup: "vol+", voldown: "vol-" };
 
@@ -69,15 +62,7 @@ export const SYSTEM = [
   { value: "bootloader", label: "Reboot to bootloader" },
 ];
 
-/** Key names offered as suggestions. */
-export const KEY_NAMES = [
-  ..."abcdefghijklmnopqrstuvwxyz0123456789".split(""),
-  ...Array.from({ length: 24 }, (_, i) => `f${i + 1}`),
-  "enter", "esc", "backspace", "tab", "space", "minus", "equal", "lbracket", "rbracket", "backslash",
-  "semicolon", "quote", "grave", "comma", "period", "slash", "capslock", "printscreen", "scrolllock",
-  "pause", "insert", "home", "pageup", "delete", "end", "pagedown", "right", "left", "down", "up",
-  "numlock", "menu",
-];
+export { KEY_NAMES } from "./keys";
 
 export const DEFAULT_REPEAT_MS = 100;
 

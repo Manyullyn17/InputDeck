@@ -13,7 +13,8 @@
 //! | `a`, `7`, `f5`, `enter`, `left`, `-`, ... | a key |
 //! | `ctrl+shift+t`, `rctrl+c`, `gui+space` | a key with modifiers |
 //! | `0x2c`, `ctrl+0x2c` | a raw HID keyboard usage |
-//! | `vol+`, `mute`, `play`, ... | a media key |
+//! | `kp7`, `kpenter`, `nonusbackslash`, `f13`, `undo`, ... | more keys (see `KEYS`) |
+//! | `vol+`, `mute`, `playpause`, `calc`, `browser_back`, ... | a media / launch key (see `MEDIA`) |
 //! | `media:0xb5` | a raw consumer-control usage |
 //! | `#rrggbb`, `off`, `_` | colors |
 //!
@@ -118,8 +119,47 @@ const KEYS: &[(&str, u8)] = &[
     ("down", 0x51),
     ("up", 0x52),
     ("numlock", 0x53),
+    ("kpdiv", 0x54),
+    ("kpmul", 0x55),
+    ("kpminus", 0x56),
+    ("kpplus", 0x57),
+    ("kpenter", 0x58),
+    ("kp1", 0x59),
+    ("kp2", 0x5A),
+    ("kp3", 0x5B),
+    ("kp4", 0x5C),
+    ("kp5", 0x5D),
+    ("kp6", 0x5E),
+    ("kp7", 0x5F),
+    ("kp8", 0x60),
+    ("kp9", 0x61),
+    ("kp0", 0x62),
+    ("kpdot", 0x63),
+    ("kpequal", 0x67),
+    ("kpcomma", 0x85),
+    ("nonushash", 0x32),
+    ("nonusbackslash", 0x64),
+    ("102nd", 0x64),
     ("menu", 0x65),
     ("app", 0x65),
+    ("execute", 0x74),
+    ("help", 0x75),
+    ("select", 0x77),
+    ("again", 0x79),
+    ("undo", 0x7A),
+    ("cut", 0x7B),
+    ("copy", 0x7C),
+    ("paste", 0x7D),
+    ("find", 0x7E),
+    ("ro", 0x87),
+    ("katakanahiragana", 0x88),
+    ("yen", 0x89),
+    ("henkan", 0x8A),
+    ("muhenkan", 0x8B),
+    ("hangul", 0x90),
+    ("lang1", 0x90),
+    ("hanja", 0x91),
+    ("lang2", 0x91),
 ];
 
 const MEDIA: &[(&str, u16)] = &[
@@ -135,6 +175,19 @@ const MEDIA: &[(&str, u16)] = &[
     ("stop", 0xB7),
     ("bri+", 0x6F),
     ("bri-", 0x70),
+    ("rewind", 0xB4),
+    ("fastforward", 0xB3),
+    ("record", 0xB2),
+    ("eject", 0xB8),
+    ("calc", 0x192),
+    ("browser", 0x196),
+    ("email", 0x18A),
+    ("files", 0x194),
+    ("search", 0x221),
+    ("browser_home", 0x223),
+    ("browser_back", 0x224),
+    ("browser_forward", 0x225),
+    ("browser_refresh", 0x227),
 ];
 
 /// Modifier names; the first name for a bit is canonical.
@@ -509,7 +562,7 @@ mod tests {
 
     #[test]
     fn format_parse_roundtrip() {
-        for text in ["a", "0", "f24", "ctrl+shift+t", "rgui+enter", "-", "0x64", "vol+", "playpause", "media:0x183", "shift", "ctrl+alt"] {
+        for text in ["a", "0", "f24", "ctrl+shift+t", "rgui+enter", "-", "0x66", "vol+", "playpause", "media:0x183", "kpplus", "ctrl+kpminus", "nonusbackslash", "browser_back", "shift", "ctrl+alt"] {
             let action = parse_action(text).unwrap();
             let mut out = String::new();
             write_action(&mut out, action).unwrap();

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { MacroEdit, MacroKind, MacroView, StopMode } from "./api";
-  import { KEY_NAMES } from "./notation";
+  import KeyPicker from "./KeyPicker.svelte";
+  import { KEY_NAMES } from "./keys";
 
   let {
     macro,
@@ -59,6 +60,8 @@
   let charDelay = $state<number | null>(null);
   let rows = $state<StepRow[]>([]);
   let error = $state<string | null>(null);
+  /** Step row whose key picker is open. */
+  let picking = $state<number | null>(null);
 
   function load() {
     name = macro.name;
@@ -182,6 +185,7 @@
           <input class="grow" bind:value={row.value} placeholder="text to type" />
         {:else}
           <input class="grow mono" list="macro-key-names" bind:value={row.value} placeholder="key, e.g. ctrl+c, shift, f5, vol+" />
+          <button class="pick" onclick={() => (picking = i)} title="Pick or press a key">⌨</button>
         {/if}
         <div class="row-btns">
           <button onclick={() => move(i, -1)} disabled={i === 0} title="Move up">↑</button>
@@ -232,6 +236,15 @@
     <button class="primary" onclick={apply} disabled={!changed}>Apply</button>
   </div>
 </div>
+
+{#if picking !== null}
+  <KeyPicker
+    onpick={(name) => {
+      if (picking !== null && rows[picking]) rows[picking].value = name;
+    }}
+    onclose={() => (picking = null)}
+  />
+{/if}
 
 <datalist id="macro-key-names">
   {#each KEY_NAMES as k}<option value={k}></option>{/each}
@@ -310,6 +323,9 @@
   }
   .ms {
     width: 80px;
+  }
+  .pick {
+    padding: 3px 8px;
   }
   .row-btns button,
   .adds button {

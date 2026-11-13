@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { LayerView, MacroView } from "./api";
+  import KeyPicker from "./KeyPicker.svelte";
   import { KEY_NAMES, KINDS, MEDIA, MODS, SYSTEM, format, parse, type Binding, type Kind } from "./notation";
 
   let {
@@ -22,6 +23,7 @@
   let form = $state<Binding>(parse(""));
   let text = $state("");
   let error = $state<string | null>(null);
+  let picking = $state(false);
 
   // Reset when another key is selected (or the file changes underneath).
   $effect(() => {
@@ -86,6 +88,7 @@
           placeholder="a, f5, enter… (empty: modifiers only)"
           oninput={(e) => update({ key: e.currentTarget.value.trim().toLowerCase() })}
         />
+        <button class="pick" onclick={() => (picking = true)} title="Pick or press a key">⌨</button>
       </label>
       <div class="row">
         <span>Modifiers</span>
@@ -173,6 +176,17 @@
   </div>
 </div>
 
+{#if picking}
+  <KeyPicker
+    allowMedia={false}
+    onpick={(name) => {
+      const picked = parse(name);
+      update({ key: picked.key, mods: picked.mods });
+    }}
+    onclose={() => (picking = false)}
+  />
+{/if}
+
 <datalist id="key-names">
   {#each KEY_NAMES as k}<option value={k}></option>{/each}
 </datalist>
@@ -214,6 +228,9 @@
   .row select {
     flex: 1;
     min-width: 0;
+  }
+  .pick {
+    padding: 3px 8px;
   }
   .row input[type="number"] {
     width: 90px;

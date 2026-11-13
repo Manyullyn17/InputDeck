@@ -1,0 +1,855 @@
+[
+ {
+  "title": "Letters",
+  "keys": [
+   {
+    "name": "a",
+    "label": "A",
+    "code": "KeyA"
+   },
+   {
+    "name": "b",
+    "label": "B",
+    "code": "KeyB"
+   },
+   {
+    "name": "c",
+    "label": "C",
+    "code": "KeyC"
+   },
+   {
+    "name": "d",
+    "label": "D",
+    "code": "KeyD"
+   },
+   {
+    "name": "e",
+    "label": "E",
+    "code": "KeyE"
+   },
+   {
+    "name": "f",
+    "label": "F",
+    "code": "KeyF"
+   },
+   {
+    "name": "g",
+    "label": "G",
+    "code": "KeyG"
+   },
+   {
+    "name": "h",
+    "label": "H",
+    "code": "KeyH"
+   },
+   {
+    "name": "i",
+    "label": "I",
+    "code": "KeyI"
+   },
+   {
+    "name": "j",
+    "label": "J",
+    "code": "KeyJ"
+   },
+   {
+    "name": "k",
+    "label": "K",
+    "code": "KeyK"
+   },
+   {
+    "name": "l",
+    "label": "L",
+    "code": "KeyL"
+   },
+   {
+    "name": "m",
+    "label": "M",
+    "code": "KeyM"
+   },
+   {
+    "name": "n",
+    "label": "N",
+    "code": "KeyN"
+   },
+   {
+    "name": "o",
+    "label": "O",
+    "code": "KeyO"
+   },
+   {
+    "name": "p",
+    "label": "P",
+    "code": "KeyP"
+   },
+   {
+    "name": "q",
+    "label": "Q",
+    "code": "KeyQ"
+   },
+   {
+    "name": "r",
+    "label": "R",
+    "code": "KeyR"
+   },
+   {
+    "name": "s",
+    "label": "S",
+    "code": "KeyS"
+   },
+   {
+    "name": "t",
+    "label": "T",
+    "code": "KeyT"
+   },
+   {
+    "name": "u",
+    "label": "U",
+    "code": "KeyU"
+   },
+   {
+    "name": "v",
+    "label": "V",
+    "code": "KeyV"
+   },
+   {
+    "name": "w",
+    "label": "W",
+    "code": "KeyW"
+   },
+   {
+    "name": "x",
+    "label": "X",
+    "code": "KeyX"
+   },
+   {
+    "name": "y",
+    "label": "Y",
+    "code": "KeyY"
+   },
+   {
+    "name": "z",
+    "label": "Z",
+    "code": "KeyZ"
+   }
+  ]
+ },
+ {
+  "title": "Digits",
+  "keys": [
+   {
+    "name": "1",
+    "label": "1",
+    "code": "Digit1"
+   },
+   {
+    "name": "2",
+    "label": "2",
+    "code": "Digit2"
+   },
+   {
+    "name": "3",
+    "label": "3",
+    "code": "Digit3"
+   },
+   {
+    "name": "4",
+    "label": "4",
+    "code": "Digit4"
+   },
+   {
+    "name": "5",
+    "label": "5",
+    "code": "Digit5"
+   },
+   {
+    "name": "6",
+    "label": "6",
+    "code": "Digit6"
+   },
+   {
+    "name": "7",
+    "label": "7",
+    "code": "Digit7"
+   },
+   {
+    "name": "8",
+    "label": "8",
+    "code": "Digit8"
+   },
+   {
+    "name": "9",
+    "label": "9",
+    "code": "Digit9"
+   },
+   {
+    "name": "0",
+    "label": "0",
+    "code": "Digit0"
+   }
+  ]
+ },
+ {
+  "title": "Function keys",
+  "keys": [
+   {
+    "name": "f1",
+    "label": "F1",
+    "code": "F1"
+   },
+   {
+    "name": "f2",
+    "label": "F2",
+    "code": "F2"
+   },
+   {
+    "name": "f3",
+    "label": "F3",
+    "code": "F3"
+   },
+   {
+    "name": "f4",
+    "label": "F4",
+    "code": "F4"
+   },
+   {
+    "name": "f5",
+    "label": "F5",
+    "code": "F5"
+   },
+   {
+    "name": "f6",
+    "label": "F6",
+    "code": "F6"
+   },
+   {
+    "name": "f7",
+    "label": "F7",
+    "code": "F7"
+   },
+   {
+    "name": "f8",
+    "label": "F8",
+    "code": "F8"
+   },
+   {
+    "name": "f9",
+    "label": "F9",
+    "code": "F9"
+   },
+   {
+    "name": "f10",
+    "label": "F10",
+    "code": "F10"
+   },
+   {
+    "name": "f11",
+    "label": "F11",
+    "code": "F11"
+   },
+   {
+    "name": "f12",
+    "label": "F12",
+    "code": "F12"
+   },
+   {
+    "name": "f13",
+    "label": "F13",
+    "code": "F13"
+   },
+   {
+    "name": "f14",
+    "label": "F14",
+    "code": "F14"
+   },
+   {
+    "name": "f15",
+    "label": "F15",
+    "code": "F15"
+   },
+   {
+    "name": "f16",
+    "label": "F16",
+    "code": "F16"
+   },
+   {
+    "name": "f17",
+    "label": "F17",
+    "code": "F17"
+   },
+   {
+    "name": "f18",
+    "label": "F18",
+    "code": "F18"
+   },
+   {
+    "name": "f19",
+    "label": "F19",
+    "code": "F19"
+   },
+   {
+    "name": "f20",
+    "label": "F20",
+    "code": "F20"
+   },
+   {
+    "name": "f21",
+    "label": "F21",
+    "code": "F21"
+   },
+   {
+    "name": "f22",
+    "label": "F22",
+    "code": "F22"
+   },
+   {
+    "name": "f23",
+    "label": "F23",
+    "code": "F23"
+   },
+   {
+    "name": "f24",
+    "label": "F24",
+    "code": "F24"
+   }
+  ],
+  "note": "F13–F24 are free for custom shortcuts on most systems."
+ },
+ {
+  "title": "Basics",
+  "keys": [
+   {
+    "name": "enter",
+    "label": "Enter",
+    "code": "Enter"
+   },
+   {
+    "name": "esc",
+    "label": "Escape",
+    "code": "Escape"
+   },
+   {
+    "name": "backspace",
+    "label": "Backspace",
+    "code": "Backspace"
+   },
+   {
+    "name": "tab",
+    "label": "Tab",
+    "code": "Tab"
+   },
+   {
+    "name": "space",
+    "label": "Space",
+    "code": "Space"
+   },
+   {
+    "name": "capslock",
+    "label": "Caps Lock",
+    "code": "CapsLock"
+   },
+   {
+    "name": "menu",
+    "label": "Menu / context key",
+    "code": "ContextMenu"
+   }
+  ]
+ },
+ {
+  "title": "Navigation",
+  "keys": [
+   {
+    "name": "up",
+    "label": "Up",
+    "code": "ArrowUp"
+   },
+   {
+    "name": "down",
+    "label": "Down",
+    "code": "ArrowDown"
+   },
+   {
+    "name": "left",
+    "label": "Left",
+    "code": "ArrowLeft"
+   },
+   {
+    "name": "right",
+    "label": "Right",
+    "code": "ArrowRight"
+   },
+   {
+    "name": "home",
+    "label": "Home",
+    "code": "Home"
+   },
+   {
+    "name": "end",
+    "label": "End",
+    "code": "End"
+   },
+   {
+    "name": "pageup",
+    "label": "Page Up",
+    "code": "PageUp"
+   },
+   {
+    "name": "pagedown",
+    "label": "Page Down",
+    "code": "PageDown"
+   },
+   {
+    "name": "insert",
+    "label": "Insert",
+    "code": "Insert"
+   },
+   {
+    "name": "delete",
+    "label": "Delete",
+    "code": "Delete"
+   }
+  ]
+ },
+ {
+  "title": "Symbols (US positions)",
+  "keys": [
+   {
+    "name": "-",
+    "label": "- _",
+    "code": "Minus"
+   },
+   {
+    "name": "=",
+    "label": "= +",
+    "code": "Equal"
+   },
+   {
+    "name": "[",
+    "label": "[ {",
+    "code": "BracketLeft"
+   },
+   {
+    "name": "]",
+    "label": "] }",
+    "code": "BracketRight"
+   },
+   {
+    "name": "\\",
+    "label": "\\ |",
+    "code": "Backslash"
+   },
+   {
+    "name": ";",
+    "label": "; :",
+    "code": "Semicolon"
+   },
+   {
+    "name": "'",
+    "label": "' \"",
+    "code": "Quote"
+   },
+   {
+    "name": "`",
+    "label": "` ~",
+    "code": "Backquote"
+   },
+   {
+    "name": ",",
+    "label": ", <",
+    "code": "Comma"
+   },
+   {
+    "name": ".",
+    "label": ". >",
+    "code": "Period"
+   },
+   {
+    "name": "/",
+    "label": "/ ?",
+    "code": "Slash"
+   },
+   {
+    "name": "nonusbackslash",
+    "label": "ISO key left of Z (< > on EU keyboards)",
+    "code": "IntlBackslash"
+   },
+   {
+    "name": "nonushash",
+    "label": "ISO key left of Enter (# ' on UK/DE)"
+   }
+  ],
+  "note": "These are physical keys; what they type depends on your keyboard layout. To type a specific character, use a Type text step instead."
+ },
+ {
+  "title": "Modifiers",
+  "keys": [
+   {
+    "name": "ctrl",
+    "label": "Ctrl",
+    "code": "ControlLeft"
+   },
+   {
+    "name": "shift",
+    "label": "Shift",
+    "code": "ShiftLeft"
+   },
+   {
+    "name": "alt",
+    "label": "Alt",
+    "code": "AltLeft"
+   },
+   {
+    "name": "gui",
+    "label": "Super / Win / Cmd",
+    "code": "MetaLeft"
+   },
+   {
+    "name": "rctrl",
+    "label": "Right Ctrl",
+    "code": "ControlRight"
+   },
+   {
+    "name": "rshift",
+    "label": "Right Shift",
+    "code": "ShiftRight"
+   },
+   {
+    "name": "ralt",
+    "label": "Right Alt / AltGr",
+    "code": "AltRight"
+   },
+   {
+    "name": "rgui",
+    "label": "Right Super",
+    "code": "MetaRight"
+   }
+  ]
+ },
+ {
+  "title": "Numpad",
+  "keys": [
+   {
+    "name": "numlock",
+    "label": "Num Lock",
+    "code": "NumLock"
+   },
+   {
+    "name": "kp1",
+    "label": "Numpad 1",
+    "code": "Numpad1"
+   },
+   {
+    "name": "kp2",
+    "label": "Numpad 2",
+    "code": "Numpad2"
+   },
+   {
+    "name": "kp3",
+    "label": "Numpad 3",
+    "code": "Numpad3"
+   },
+   {
+    "name": "kp4",
+    "label": "Numpad 4",
+    "code": "Numpad4"
+   },
+   {
+    "name": "kp5",
+    "label": "Numpad 5",
+    "code": "Numpad5"
+   },
+   {
+    "name": "kp6",
+    "label": "Numpad 6",
+    "code": "Numpad6"
+   },
+   {
+    "name": "kp7",
+    "label": "Numpad 7",
+    "code": "Numpad7"
+   },
+   {
+    "name": "kp8",
+    "label": "Numpad 8",
+    "code": "Numpad8"
+   },
+   {
+    "name": "kp9",
+    "label": "Numpad 9",
+    "code": "Numpad9"
+   },
+   {
+    "name": "kp0",
+    "label": "Numpad 0",
+    "code": "Numpad0"
+   },
+   {
+    "name": "kpdot",
+    "label": "Numpad .",
+    "code": "NumpadDecimal"
+   },
+   {
+    "name": "kpplus",
+    "label": "Numpad +",
+    "code": "NumpadAdd"
+   },
+   {
+    "name": "kpminus",
+    "label": "Numpad -",
+    "code": "NumpadSubtract"
+   },
+   {
+    "name": "kpmul",
+    "label": "Numpad *",
+    "code": "NumpadMultiply"
+   },
+   {
+    "name": "kpdiv",
+    "label": "Numpad /",
+    "code": "NumpadDivide"
+   },
+   {
+    "name": "kpenter",
+    "label": "Numpad Enter",
+    "code": "NumpadEnter"
+   },
+   {
+    "name": "kpequal",
+    "label": "Numpad =",
+    "code": "NumpadEqual"
+   },
+   {
+    "name": "kpcomma",
+    "label": "Numpad ,",
+    "code": "NumpadComma"
+   }
+  ]
+ },
+ {
+  "title": "System",
+  "keys": [
+   {
+    "name": "printscreen",
+    "label": "Print Screen",
+    "code": "PrintScreen"
+   },
+   {
+    "name": "scrolllock",
+    "label": "Scroll Lock",
+    "code": "ScrollLock"
+   },
+   {
+    "name": "pause",
+    "label": "Pause / Break",
+    "code": "Pause"
+   }
+  ]
+ },
+ {
+  "title": "Media",
+  "keys": [
+   {
+    "name": "playpause",
+    "label": "Play / Pause",
+    "code": "MediaPlayPause"
+   },
+   {
+    "name": "next",
+    "label": "Next track",
+    "code": "MediaTrackNext"
+   },
+   {
+    "name": "prev",
+    "label": "Previous track",
+    "code": "MediaTrackPrevious"
+   },
+   {
+    "name": "stop",
+    "label": "Stop",
+    "code": "MediaStop"
+   },
+   {
+    "name": "rewind",
+    "label": "Rewind"
+   },
+   {
+    "name": "fastforward",
+    "label": "Fast forward"
+   },
+   {
+    "name": "record",
+    "label": "Record"
+   },
+   {
+    "name": "eject",
+    "label": "Eject",
+    "code": "Eject"
+   },
+   {
+    "name": "vol+",
+    "label": "Volume up",
+    "code": "AudioVolumeUp"
+   },
+   {
+    "name": "vol-",
+    "label": "Volume down",
+    "code": "AudioVolumeDown"
+   },
+   {
+    "name": "mute",
+    "label": "Mute",
+    "code": "AudioVolumeMute"
+   },
+   {
+    "name": "bri+",
+    "label": "Screen brightness up"
+   },
+   {
+    "name": "bri-",
+    "label": "Screen brightness down"
+   }
+  ],
+  "media": true
+ },
+ {
+  "title": "Apps & browser",
+  "keys": [
+   {
+    "name": "calc",
+    "label": "Calculator",
+    "code": "LaunchApp2"
+   },
+   {
+    "name": "files",
+    "label": "File manager",
+    "code": "LaunchApp1"
+   },
+   {
+    "name": "browser",
+    "label": "Web browser"
+   },
+   {
+    "name": "email",
+    "label": "Email",
+    "code": "LaunchMail"
+   },
+   {
+    "name": "search",
+    "label": "Search",
+    "code": "BrowserSearch"
+   },
+   {
+    "name": "browser_home",
+    "label": "Browser home",
+    "code": "BrowserHome"
+   },
+   {
+    "name": "browser_back",
+    "label": "Browser back",
+    "code": "BrowserBack"
+   },
+   {
+    "name": "browser_forward",
+    "label": "Browser forward",
+    "code": "BrowserForward"
+   },
+   {
+    "name": "browser_refresh",
+    "label": "Browser refresh",
+    "code": "BrowserRefresh"
+   }
+  ],
+  "media": true,
+  "note": "Launch keys open whatever your desktop has assigned to them."
+ },
+ {
+  "title": "Edit commands",
+  "keys": [
+   {
+    "name": "undo",
+    "label": "Undo",
+    "code": "Undo"
+   },
+   {
+    "name": "again",
+    "label": "Redo / Again",
+    "code": "Again"
+   },
+   {
+    "name": "cut",
+    "label": "Cut",
+    "code": "Cut"
+   },
+   {
+    "name": "copy",
+    "label": "Copy",
+    "code": "Copy"
+   },
+   {
+    "name": "paste",
+    "label": "Paste",
+    "code": "Paste"
+   },
+   {
+    "name": "find",
+    "label": "Find",
+    "code": "Find"
+   },
+   {
+    "name": "select",
+    "label": "Select",
+    "code": "Select"
+   },
+   {
+    "name": "help",
+    "label": "Help",
+    "code": "Help"
+   },
+   {
+    "name": "execute",
+    "label": "Execute"
+   }
+  ],
+  "note": "Dedicated keys; support varies by app. Ctrl+C etc. are more reliable."
+ },
+ {
+  "title": "International",
+  "keys": [
+   {
+    "name": "ro",
+    "label": "Ro (JIS)",
+    "code": "IntlRo"
+   },
+   {
+    "name": "yen",
+    "label": "Yen (JIS)",
+    "code": "IntlYen"
+   },
+   {
+    "name": "katakanahiragana",
+    "label": "Katakana/Hiragana",
+    "code": "KanaMode"
+   },
+   {
+    "name": "henkan",
+    "label": "Henkan / Convert",
+    "code": "Convert"
+   },
+   {
+    "name": "muhenkan",
+    "label": "Muhenkan / Non-convert",
+    "code": "NonConvert"
+   },
+   {
+    "name": "hangul",
+    "label": "Hangul / Lang1",
+    "code": "Lang1"
+   },
+   {
+    "name": "hanja",
+    "label": "Hanja / Lang2",
+    "code": "Lang2"
+   }
+  ]
+ }
+]

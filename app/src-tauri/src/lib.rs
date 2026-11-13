@@ -371,3 +371,27 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use macropad_engine::Action;
+    use macropad_engine::notation::parse_action;
+
+    /// The app's key picker (src/lib/keys.json) only offers names the
+    /// engine understands, and media entries are media keys.
+    #[test]
+    fn key_catalog_names_parse() {
+        let groups: serde_json::Value = serde_json::from_str(include_str!("../../src/lib/keys.json")).unwrap();
+        let mut count = 0;
+        for group in groups.as_array().unwrap() {
+            let media = group.get("media").and_then(|m| m.as_bool()).unwrap_or(false);
+            for key in group["keys"].as_array().unwrap() {
+                let name = key["name"].as_str().unwrap();
+                let action = parse_action(name).unwrap_or_else(|e| panic!("{name}: {e}"));
+                assert_eq!(matches!(action, Action::Consumer(_)), media, "{name}");
+                count += 1;
+            }
+        }
+        assert!(count > 150);
+    }
+}
