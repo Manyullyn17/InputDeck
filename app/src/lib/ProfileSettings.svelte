@@ -187,7 +187,7 @@
   }
   .colors {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
     gap: 10px 18px;
   }
   .small {

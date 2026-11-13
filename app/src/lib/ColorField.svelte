@@ -61,6 +61,7 @@
     align-items: center;
     gap: 10px;
     position: relative;
+    min-width: 0;
   }
   .swatch {
     width: 34px;
@@ -111,6 +112,7 @@
   .btns {
     display: flex;
     gap: 4px;
+    flex-shrink: 0;
   }
   .small {
     padding: 2px 8px;
