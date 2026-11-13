@@ -1,0 +1,7 @@
+[build]
+target = "thumbv6m-none-eabi"
+
+[target.thumbv6m-none-eabi]
+# Converts the ELF to UF2 and copies it to the RPI-RP2 drive
+# (hold the encoder button while plugging in to enter the bootloader).
+runner = "elf2uf2-rs -d"

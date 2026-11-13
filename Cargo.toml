@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["engine"]
+# Firmware is its own workspace: it only builds for the RP2040 target.
+exclude = ["firmware"]
 
 [workspace.package]
 edition = "2024"
