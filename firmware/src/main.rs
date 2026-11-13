@@ -3,6 +3,7 @@
 //! Bring-up stage: scans keys and encoder, runs the shared engine with a
 //! hard-coded demo config, and sends USB HID keyboard and media reports.
 //! The red LED is lit whenever a layer other than the base layer is active.
+//! Holding the knob plus keys 10 and 12 reboots into the UF2 bootloader.
 
 #![no_std]
 #![no_main]
@@ -125,6 +126,11 @@ async fn main(_spawner: Spawner) {
 
             let mut events: Vec<Event, 16> = Vec::new();
             debouncer.scan(&buttons, &mut events);
+            // Hard-wired escape hatch, independent of the config: knob +
+            // keys 10 and 12 (bottom corners) reboots into the UF2 bootloader.
+            if debouncer.is_pressed(12) && debouncer.is_pressed(9) && debouncer.is_pressed(11) {
+                embassy_rp::rom_data::reset_to_usb_boot(0, 0);
+            }
             if let Some(event) = encoder.update(rot_a.is_high(), rot_b.is_high()) {
                 let _ = events.push(event);
             }

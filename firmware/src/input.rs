@@ -18,6 +18,11 @@ impl Debouncer {
         Debouncer { pressed: [false; BUTTON_COUNT], counter: [0; BUTTON_COUNT] }
     }
 
+    /// Debounced state of the button at `index` (0..12 keys, 12 encoder).
+    pub fn is_pressed(&self, index: usize) -> bool {
+        self.pressed[index]
+    }
+
     pub fn scan<const N: usize>(&mut self, pins: &[Input<'_>; BUTTON_COUNT], events: &mut Vec<Event, N>) {
         for (i, pin) in pins.iter().enumerate() {
             let raw = pin.is_low();
@@ -63,12 +68,13 @@ impl Encoder {
         let current = Self::bits(a, b);
         self.steps += TRANSITIONS[((self.state << 2) | current) as usize];
         self.state = current;
+        // On the MacroPad, negative steps are clockwise.
         if self.steps >= STEPS_PER_DETENT {
             self.steps = 0;
-            Some(Event::Rotate(Direction::Clockwise))
+            Some(Event::Rotate(Direction::CounterClockwise))
         } else if self.steps <= -STEPS_PER_DETENT {
             self.steps = 0;
-            Some(Event::Rotate(Direction::CounterClockwise))
+            Some(Event::Rotate(Direction::Clockwise))
         } else {
             None
         }

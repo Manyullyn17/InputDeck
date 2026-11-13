@@ -2,7 +2,7 @@
 //!
 //! Layout (keys numbered 1-12, top-left first):
 //! - L0: key 1 = m1 (-> L1), key 2 = m2 (-> L2), keys 3-12 type a-j,
-//!   encoder = volume up/down.
+//!   encoder = volume up/down, encoder press = mute.
 //! - L1: key 2 = m3 (-> L3); key 3 types "1"; encoder = right/left arrow.
 //! - L2: key 1 = m4 (-> L4); key 3 types "2".
 //! - L3 (parent L1): key 3 types "3".
@@ -18,6 +18,7 @@ const RIGHT: u8 = 0x4F;
 const LEFT: u8 = 0x50;
 const VOLUME_UP: u16 = 0xE9;
 const VOLUME_DOWN: u16 = 0xEA;
+const MUTE: u16 = 0xE2;
 
 fn key(n: u8) -> Button {
     Button::key(n - 1).unwrap()
@@ -40,6 +41,7 @@ pub fn layers() -> [Layer; 5] {
     }
     l0.encoder_cw = EncoderBinding::Action(Action::Consumer(VOLUME_UP));
     l0.encoder_ccw = EncoderBinding::Action(Action::Consumer(VOLUME_DOWN));
+    l0.set(Button::ENCODER, KeyBinding::Action(Action::Consumer(MUTE)));
 
     let mut l1 = Layer::transparent(LayerId(0));
     l1.set(key(2), KeyBinding::Layer(LayerId(3))).set(key(3), digit(1));
