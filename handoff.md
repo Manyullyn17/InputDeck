@@ -1,6 +1,6 @@
 # Macropad OS — Project Handoff
 
-**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, USB keyboard/media output, OLED status screen, and configurable key LEDs, all driven by a hard-coded demo config.  
+**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, USB keyboard/media output, OLED status screen, and configurable key LEDs. Configs are written in TOML, uploaded over USB with `mpcfg`, and stored in flash.  
 **Hardware:** Adafruit MacroPad RP2040  
 **Last updated:** 2026-11-13
 
@@ -60,8 +60,14 @@ firmware/   embassy-rp firmware for the RP2040 (own workspace)
   main.rs     USB, scan loop, display and LED loops, idle handling
   input.rs    debouncing (1 ms polling, 5 ms) and encoder decoding
   display.rs  SH1106 driver and status screen
-  demo.rs     hard-coded demo config (until config storage exists)
+  storage.rs  two alternating config slots at the end of flash
+  serial.rs   USB serial endpoint for config tools
+  demo.rs     built-in fallback config when nothing is stored
+tools/mpcfg/  host CLI: TOML config -> binary, upload/pull, bootloader
+configs/      example configs (demo.toml documents the format)
 ```
+
+Additional engine modules: `codec.rs` (versioned binary config format with CRC), `notation.rs` (short binding/color notation like `ctrl+c`, `layer:nav`, `#ff0000`), `protocol.rs` (serial framing).
 
 Key principles:
 
@@ -72,8 +78,15 @@ Key principles:
 ### Building and flashing
 
 - Toolchain pinned by `rust-toolchain.toml` (Rust 1.100.0 + `thumbv6m-none-eabi`), installed via rustup.
-- In `firmware/`: `cargo run --release`. The runner (`flash.sh`) waits for the bootloader drive, mounts it if needed, and flashes with `elf2uf2-rs`.
-- Enter the bootloader with **knob + keys 10 and 12** (hard-wired in firmware, independent of config), or by holding the knob while plugging in.
+- In `firmware/`: `cargo run --release`. The runner (`flash.sh`) asks running firmware to reboot into the bootloader (via `mpcfg`), waits for the drive, mounts it if needed, and flashes with `elf2uf2-rs`. Stored configs survive firmware updates.
+- Manual bootloader entry: **knob + keys 10 and 12** (hard-wired in firmware, independent of config), or hold the knob while plugging in.
+- The udev rule in `tools/udev/` gives the logged-in user access to the device's serial port.
+
+### Configs
+
+- `cargo run -p mpcfg -- check configs/demo.toml` validates a config and points to the exact layer/key on errors.
+- `cargo run -p mpcfg -- upload configs/demo.toml` stores it on the device, which reboots to apply it.
+- `mpcfg info` shows the stored config; `mpcfg pull -o file.bin` downloads it in binary form.
 
 ## 5. Confirmed Decisions
 
@@ -95,18 +108,21 @@ Key principles:
 | Toggles | Key latch, key repeat, layer toggle as separate types; see [actions.md](actions.md) |
 | Macros | Down/up/delay/text steps; one-shot, repeat-while-held, toggle; see [actions.md](actions.md) |
 | Quantum layers | Optional future experiment, not V1 |
+| Config format | TOML with short binding strings for editing; versioned binary (postcard + CRC) on the device |
+| Config storage | Two alternating flash slots, verified after writing; fallback to built-in demo |
+| Config transfer | USB serial (CDC-ACM) with a small framed protocol |
+| Profiles | Format supports several; one used for now |
 | Desktop configuration | Companion application planned, not mandatory |
 | Onboard configuration | Simpler built-in interface planned |
 
 ## 6. Open Questions
 
-### Configuration storage and transfer (next major step)
+### Configuration
 
-- Binary or text format on the device? How is it versioned so older configs keep working?
-- Where in flash, and how are writes made safe against power loss?
-- How does the desktop app talk to the device (e.g. USB serial or a vendor HID interface)?
-- Multiple profiles?
-- Layer names.
+- Migration between binary format versions (the device only reads its own version; tools should convert).
+- `mpcfg pull` to TOML (currently binary only).
+- Applying an uploaded config without a reboot.
+- Profile switching (the format already holds multiple profiles; only one is used).
 
 ### Toggles and macros
 
@@ -139,8 +155,8 @@ Key principles:
 4. ~~Meta layer semantics.~~
 5. ~~Test complex layer transitions and overlapping inputs.~~ (host tests + on-device checks)
 6. ~~Key LEDs and idle dimming.~~
-7. **Configuration storage and format** ← next
-8. Toggles and macros.
+7. ~~Configuration storage and format.~~
+8. **Toggles and macros** ← next
 9. Basic onboard configuration.
 10. Desktop companion application.
 11. Advanced configuration and visualization (layer graph, transition debugging, sequence replay).
