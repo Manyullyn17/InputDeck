@@ -13,6 +13,7 @@ pub mod engine;
 pub mod hid;
 pub mod label;
 pub mod led;
+pub mod notation;
 
 #[cfg(test)]
 mod testutil;

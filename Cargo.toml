@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["engine"]
+members = ["engine", "tools/mpcfg"]
 # Firmware is its own workspace: it only builds for the RP2040 target.
 exclude = ["firmware"]
 

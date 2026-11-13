@@ -1,0 +1,84 @@
+# Macropad OS demo config: the meta layer example from the design discussion.
+#
+# Check:   cargo run -p mpcfg -- check configs/demo.toml
+# Encode:  cargo run -p mpcfg -- encode configs/demo.toml -o demo.bin
+#
+# Bindings (case-insensitive):
+#   _                 inherit from the parent layer (or nothing on base)
+#   none              nothing
+#   layer:<id>        hold for that layer
+#   a, 7, f5, enter, esc, space, tab, backspace, up, left, home, pgup, -, [, ...
+#   ctrl+c, shift+alt+t, gui+space, rctrl+x   keys with modifiers
+#   vol+, vol-, mute, play, next, prev, stop  media keys
+#   0x2c, media:0xb5  raw HID usages
+#
+# Colors: "#rrggbb", "off", or "_" (inherit).
+
+[leds]
+brightness = 60     # percent
+idle_level = 45     # percent of held brightness
+held_style = "brighten"   # brighten | white | invert
+# Global category colors (unset ones keep the built-in defaults).
+palette = { layer_key = "#005aff", key = "#ff963c", modified = "#aa00ff", media = "#00ff46", unbound = "off" }
+
+[idle]
+dim_after = 60      # seconds, 0 = never
+off_after = 600
+
+# Layer-independent actions, used wherever a layer leaves the key on "_".
+# Keys are numbered 1-12 from the top-left; "encoder" is the knob button.
+[global]
+# 12 = "mute"
+
+# The layer with id "base" is layer 0. Other layers default to parent = "base".
+[layers.base]
+name = "Base"
+keys = [
+  "layer:one", "layer:two", "a",
+  "b",         "c",         "d",
+  "e",         "f",         "g",
+  "h",         "i",         "j",
+]
+encoder = { cw = "vol+", ccw = "vol-", press = "mute" }
+colors = { 12 = { idle = "#ff0000", held = "#ffdc00" } }
+
+[layers.one]
+name = "One"
+keys = [
+  "_", "layer:three", "1",
+  "_", "_",           "_",
+  "_", "_",           "_",
+  "_", "_",           "_",
+]
+encoder = { cw = "right", ccw = "left" }
+palette = { key = "#00ffb4" }
+
+[layers.two]
+name = "Two"
+keys = [
+  "layer:four", "_", "2",
+  "_",          "_", "_",
+  "_",          "_", "_",
+  "_",          "_", "_",
+]
+palette = { key = "#ff288c" }
+
+[layers.three]
+name = "Three"
+parent = "one"
+keys = [
+  "_", "_", "3",
+  "_", "_", "_",
+  "_", "_", "_",
+  "_", "_", "_",
+]
+
+[layers.four]
+name = "Four"
+parent = "two"
+keys = [
+  "_", "_", "4",
+  "_", "_", "_",
+  "_", "_", "_",
+  "_", "_", "_",
+]
