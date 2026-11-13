@@ -30,13 +30,18 @@ Fallthrough passes down actions only. An inherited layer key resolves to nothing
 
 ## State model
 
-The runtime state is a stack of the currently held layer keys, each entry being `(physical key, layer entered)`.
+The runtime state is the path of layer keys used to reach the current layer: a stack of entries `(physical key, layer entered, held | released)`.
 
-- **Press a layer key:** push an entry. The current layer becomes that entry's layer.
-- **Release a layer key:** remove its entry from wherever it sits in the stack.
+- **Press a layer key:** push a held entry. The current layer becomes that entry's layer.
+- **Release a layer key:** mark its entry as released, then settle.
+- **Settle:** while the top entry is released, either revive it (if its physical key is currently held and doing nothing on the layer it was re-pressed on) or pop it.
 - **Current layer:** the layer of the top entry, or layer 0 if the stack is empty.
 
-(An earlier formulation kept released entries in place and popped them lazily. It behaves identically, but released entries could pile up with cyclic configs, so they are removed immediately.)
+The display shows the whole path, including released ancestors (e.g. `L1>L3` with only m3 held), because those are the layers that releasing falls back through.
+
+A re-pressed key that has its own action on the current layer stays busy with that action and does not revive its old entry.
+
+The stack is capped at 32 entries. Held entries can never exceed the 13 buttons, so only cyclic configs can fill it; then the oldest released entry is dropped.
 
 Consequences (with m1 → L1, then m3 → L3 from L1):
 
@@ -45,12 +50,11 @@ Consequences (with m1 → L1, then m3 → L3 from L1):
 | hold m1, hold m3, release m3 | L1 |
 | hold m1, hold m3, release m1 | L3 (stay; m3 is still held) |
 | …then release m3 | L0 |
+| hold m1, hold m3, release m1, re-press m1, release m3 | L1 (m1 revived) |
 | hold m1, m3, m5; release m3 | L5 |
 | …then release m5 | L1 (m3 popped as released, m1 still held) |
 
 Releasing an ancestor layer key never changes the current layer while a descendant layer key is still held. This is always on, not configurable.
-
-Stack depth is bounded by the number of simultaneously held keys, so cyclic configurations cannot cause unbounded state.
 
 ## Held keys across layer switches
 

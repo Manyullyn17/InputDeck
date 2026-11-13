@@ -4,11 +4,13 @@
 //! happened through [`Output`]s. It owns no hardware and no allocation;
 //! outputs are passed to a caller-supplied closure.
 //!
-//! State is a stack of currently held layer keys. Pressing a layer key
-//! pushes it, releasing it removes it from wherever it sits, and the current
-//! layer is the top entry (or the base layer when empty). This is
-//! equivalent to the rule in `meta-layers.md` and bounds the stack by the
-//! number of buttons.
+//! State is the path of layer keys used to reach the current layer, each
+//! entry marked held or released. Pressing a layer key pushes it; releasing
+//! one marks it released and then settles the stack: released entries are
+//! popped from the top until an entry is held. A released entry whose
+//! physical key is held again (and doing nothing else) is revived instead
+//! of popped. The current layer is the top entry, or the base layer.
+//! See `meta-layers.md`.
 
 use core::mem::replace;
 
@@ -49,11 +51,17 @@ enum Held {
 struct Entry {
     button: Button,
     layer: LayerId,
+    held: bool,
 }
+
+/// Maximum path length. Held entries never exceed [`BUTTON_COUNT`]; the rest
+/// is room for released ancestors. Only cyclic configs can fill it, in
+/// which case the oldest released entry is dropped.
+pub const MAX_DEPTH: usize = 32;
 
 #[derive(Clone, Debug)]
 pub struct Engine {
-    stack: [Entry; BUTTON_COUNT],
+    stack: [Entry; MAX_DEPTH],
     depth: usize,
     held: [Held; BUTTON_COUNT],
 }
@@ -67,7 +75,7 @@ impl Default for Engine {
 impl Engine {
     pub const fn new() -> Self {
         Engine {
-            stack: [Entry { button: Button(0), layer: LayerId::BASE }; BUTTON_COUNT],
+            stack: [Entry { button: Button(0), layer: LayerId::BASE, held: false }; MAX_DEPTH],
             depth: 0,
             held: [Held::Up; BUTTON_COUNT],
         }
@@ -81,7 +89,8 @@ impl Engine {
         }
     }
 
-    /// Layers entered by currently held layer keys, bottom to top.
+    /// Path of layers leading to the current one, bottom to top. Includes
+    /// layers whose keys were released but that are still fallen back to.
     pub fn layer_path(&self) -> impl Iterator<Item = LayerId> + '_ {
         self.stack[..self.depth].iter().map(|e| e.layer)
     }
@@ -118,7 +127,10 @@ impl Engine {
             }
             Event::Release(button) => match replace(&mut self.held[button.index()], Held::Up) {
                 Held::Action(a) => out(Output::Release(a)),
-                Held::Layer => self.remove(button),
+                Held::Layer => {
+                    self.mark_released(button);
+                    self.settle();
+                }
                 Held::Nothing | Held::Up => {}
             },
             Event::Rotate(dir) => {
@@ -149,15 +161,41 @@ impl Engine {
     }
 
     fn push(&mut self, button: Button, layer: LayerId) {
-        // Each held button has at most one entry, so this cannot overflow.
-        debug_assert!(self.depth < BUTTON_COUNT);
-        self.stack[self.depth] = Entry { button, layer };
+        if self.depth == MAX_DEPTH {
+            // At most BUTTON_COUNT entries are held, so a released one exists.
+            if let Some(pos) = self.stack.iter().position(|e| !e.held) {
+                self.stack.copy_within(pos + 1.., pos);
+                self.depth -= 1;
+            }
+        }
+        self.stack[self.depth] = Entry { button, layer, held: true };
         self.depth += 1;
     }
 
-    fn remove(&mut self, button: Button) {
-        if let Some(pos) = self.stack[..self.depth].iter().rposition(|e| e.button == button) {
-            self.stack.copy_within(pos + 1..self.depth, pos);
+    fn mark_released(&mut self, button: Button) {
+        if let Some(entry) = self.stack[..self.depth]
+            .iter_mut()
+            .rev()
+            .find(|e| e.held && e.button == button)
+        {
+            entry.held = false;
+        }
+    }
+
+    /// Pops released entries off the top. A released entry whose key is
+    /// physically held and idle is revived as a held layer key instead.
+    fn settle(&mut self) {
+        while self.depth > 0 {
+            let top = &mut self.stack[self.depth - 1];
+            if top.held {
+                return;
+            }
+            let held = &mut self.held[top.button.index()];
+            if *held == Held::Nothing {
+                *held = Held::Layer;
+                top.held = true;
+                return;
+            }
             self.depth -= 1;
         }
     }
@@ -257,6 +295,60 @@ mod tests {
         assert_eq!(h.layer(), 3);
         assert_eq!(h.release(M1), []);
         assert_eq!(h.layer(), 3);
+    }
+
+    #[test]
+    fn released_ancestors_stay_in_path() {
+        let layers = example();
+        let mut h = Harness::new(&layers);
+        h.press(M1);
+        h.press(M2);
+        h.release(M1);
+        assert_eq!(h.engine.layer_path().collect::<Vec<_>>(), [LayerId(1), LayerId(3)]);
+    }
+
+    #[test]
+    fn repressed_ancestor_is_fallen_back_to() {
+        let layers = example();
+        let mut h = Harness::new(&layers);
+        h.press(M1);
+        h.press(M2);
+        h.release(M1);
+        h.press(M1); // idle on L3
+        assert_eq!(h.release(M2), [LayerChanged(LayerId(1))]);
+        assert!(h.engine.is_held(k(M1)));
+        assert_eq!(h.release(M1), [LayerChanged(LayerId(0))]);
+    }
+
+    #[test]
+    fn repressed_key_with_an_action_does_not_revive() {
+        let mut layers = example();
+        layers[3].set(k(M1), key(0x1B)); // m1 types X on L3
+        let mut h = Harness::new(&layers);
+        h.press(M1);
+        h.press(M2);
+        h.release(M1);
+        assert_eq!(h.press(M1), [Press(act(0x1B))]);
+        assert_eq!(h.release(M2), [LayerChanged(LayerId(0))]);
+        assert_eq!(h.release(M1), [Release(act(0x1B))]);
+    }
+
+    #[test]
+    fn cyclic_config_is_bounded() {
+        let mut layers = example();
+        layers[3].set(k(M1), KeyBinding::Layer(LayerId(1))); // L1 -> L3 -> L1 -> ...
+        let mut h = Harness::new(&layers);
+        h.press(M1);
+        for _ in 0..100 {
+            h.press(M2); // -> L3
+            h.release(M1);
+            h.press(M1); // -> L1
+            h.release(M2);
+        }
+        assert_eq!(h.layer(), 1);
+        assert!(h.engine.layer_path().count() <= MAX_DEPTH);
+        h.release(M1);
+        assert_eq!(h.layer(), 0);
     }
 
     #[test]
