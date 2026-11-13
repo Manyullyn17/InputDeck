@@ -30,27 +30,48 @@ export const MEDIA_KEYS: KeyEntry[] = KEY_GROUPS.filter((g) => g.media).flatMap(
 
 const BY_CODE = new Map(KEY_GROUPS.flatMap((g) => g.keys.filter((k) => k.code).map((k) => [k.code!, k] as const)));
 
+/** Older `code` names some engines (WebKitGTK) still report. */
+const CODE_ALIASES: Record<string, string> = {
+  OSLeft: "MetaLeft",
+  OSRight: "MetaRight",
+  VolumeUp: "AudioVolumeUp",
+  VolumeDown: "AudioVolumeDown",
+  VolumeMute: "AudioVolumeMute",
+};
+
+/** Whether `code` is a modifier key (Ctrl, Shift, Alt, Super; either side). */
+export function isModifierCode(code: string): boolean {
+  const entry = BY_CODE.get(CODE_ALIASES[code] ?? code);
+  return !!entry && MODIFIER_NAMES.includes(entry.name);
+}
+
 export type Capture = { name: string; media: boolean } | { unknown: string };
 
-/** Notation for a key event, e.g. "ctrl+shift+t", "rshift", "vol+". */
-export function captureKey(e: KeyboardEvent): Capture {
-  const entry = BY_CODE.get(e.code);
+/** Notation for a key event, e.g. "ctrl+shift+t", "rshift", "vol+".
+ * `held` are the codes currently down, used in addition to the event's
+ * modifier flags (WebKitGTK doesn't always set `metaKey` for Super). */
+export function captureKey(e: KeyboardEvent, held: Iterable<string> = []): Capture {
+  const entry = BY_CODE.get(CODE_ALIASES[e.code] ?? e.code);
   if (!entry) return { unknown: e.code || e.key };
   const media = KEY_GROUPS.some((g) => g.media && g.keys.includes(entry));
   if (media) return { name: entry.name, media: true };
   const altGr = e.getModifierState("AltGraph");
-  const held = [
-    e.ctrlKey && !altGr ? "ctrl" : null,
-    e.shiftKey ? "shift" : null,
-    e.altKey && !altGr ? "alt" : null,
-    e.metaKey ? "gui" : null,
+  const downMods = new Set(
+    [...held].map((c) => BY_CODE.get(CODE_ALIASES[c] ?? c)?.name.replace(/^r/, "")).filter((n) => n && MODIFIER_NAMES.includes(n)),
+  );
+  const flag = (name: string, f: boolean) => (f || downMods.has(name) ? name : null);
+  const mods = [
+    altGr ? null : flag("ctrl", e.ctrlKey),
+    flag("shift", e.shiftKey),
+    altGr ? null : flag("alt", e.altKey),
+    flag("gui", e.metaKey || e.getModifierState("Super") || e.getModifierState("OS")),
     altGr ? "ralt" : null,
   ].filter((m): m is string => m !== null);
   if (MODIFIER_NAMES.includes(entry.name)) {
     // A modifier on its own: keep its side, plus any other held modifiers.
     const generic = entry.name.replace(/^r/, "");
-    const others = held.filter((m) => m !== generic && m !== entry.name);
+    const others = mods.filter((m) => m !== generic && m !== entry.name);
     return { name: [...others, entry.name].join("+"), media: false };
   }
-  return { name: [...held, entry.name].join("+"), media: false };
+  return { name: [...mods, entry.name].join("+"), media: false };
 }

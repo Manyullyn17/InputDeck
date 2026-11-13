@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { KEY_GROUPS, captureKey, type Capture } from "./keys";
+  import { KEY_GROUPS, captureKey, isModifierCode, type Capture } from "./keys";
 
   let {
     allowMedia = true,
@@ -28,10 +28,26 @@
 
   const usable = $derived(captured && "name" in captured && (allowMedia || !captured.media) ? captured.name : null);
 
+  /** Keys currently down, by code. */
+  let down = new Set<string>();
+  /** A combination with a real (non-modifier) key was captured in this press. */
+  let locked = false;
+
   function onCaptureKey(e: KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
-    captured = captureKey(e);
+    if (down.size === 0) locked = false; // a new press starts
+    down.add(e.code);
+    if (e.repeat || locked) return;
+    captured = captureKey(e, down);
+    // Keep "meta+ctrl+alt+shift+f11" even if a modifier arrives after F11.
+    if ("name" in captured && !isModifierCode(e.code)) locked = true;
+  }
+
+  function onCaptureKeyUp(e: KeyboardEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    down.delete(e.code);
   }
 
   function pick(name: string) {
@@ -54,7 +70,7 @@
     </div>
 
     <div class="capture-row">
-      <button bind:this={captureEl} class="capture" onkeydown={onCaptureKey} title="Click here, then press a key or combination">
+      <button bind:this={captureEl} class="capture" onkeydown={onCaptureKey} onkeyup={onCaptureKeyUp} onblur={() => down.clear()} title="Click here, then press a key or combination">
         {#if !captured}
           <span class="muted">Click here and press a key or combination…</span>
         {:else if "unknown" in captured}
