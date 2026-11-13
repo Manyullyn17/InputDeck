@@ -321,7 +321,7 @@ pub fn compile(file: &File) -> Result<Config> {
     Ok(config)
 }
 
-fn stroke(text: &str) -> Result<KeyStroke> {
+pub(crate) fn stroke(text: &str) -> Result<KeyStroke> {
     match parse_action(text).map_err(|e| anyhow!("'{text}': {e}"))? {
         Action::Key { code, mods } => Ok(KeyStroke { code, mods }),
         Action::Consumer(_) => bail!("'{text}': media keys can't type characters"),

@@ -15,12 +15,40 @@ use mpcfg::to_toml;
 use serde::Serialize;
 use tauri::State;
 
+/// Undo steps kept per document.
+const UNDO_LIMIT: usize = 200;
+
 #[derive(Default)]
 struct AppState {
     doc: Option<ConfigDocument>,
     path: Option<PathBuf>,
-    dirty: bool,
+    /// The text as last opened or saved (`None`: never saved).
+    saved: Option<String>,
+    /// Earlier document texts, most recent last.
+    undo: Vec<String>,
+    redo: Vec<String>,
     sim: Option<Simulator>,
+}
+
+impl AppState {
+    fn dirty(&self) -> bool {
+        match (&self.doc, &self.saved) {
+            (Some(d), Some(saved)) => d.text() != *saved,
+            (Some(_), None) => true,
+            (None, _) => false,
+        }
+    }
+
+    /// Switches to another document (opened, new or pulled from the device).
+    fn load(&mut self, doc: ConfigDocument, path: Option<PathBuf>, saved: bool) {
+        self.saved = saved.then(|| doc.text());
+        self.doc = Some(doc);
+        self.path = path;
+        self.undo.clear();
+        self.redo.clear();
+        self.sim = None;
+        refresh_sim(self);
+    }
 }
 
 type Shared<'a> = State<'a, Mutex<AppState>>;
@@ -30,6 +58,8 @@ type CmdResult<T> = Result<T, String>;
 struct View {
     path: Option<String>,
     dirty: bool,
+    can_undo: bool,
+    can_redo: bool,
     doc: Option<DocumentView>,
 }
 
@@ -38,7 +68,13 @@ fn err(e: impl std::fmt::Display) -> String {
 }
 
 fn view(s: &AppState) -> View {
-    View { path: s.path.as_ref().map(|p| p.display().to_string()), dirty: s.dirty, doc: s.doc.as_ref().map(|d| d.view()) }
+    View {
+        path: s.path.as_ref().map(|p| p.display().to_string()),
+        dirty: s.dirty(),
+        can_undo: !s.undo.is_empty(),
+        can_redo: !s.redo.is_empty(),
+        doc: s.doc.as_ref().map(|d| d.view()),
+    }
 }
 
 /// Keeps the simulator in step with the document after it changes.
@@ -51,13 +87,44 @@ fn refresh_sim(s: &mut AppState) {
     }
 }
 
-fn edit(state: &Shared, f: impl FnOnce(&mut ConfigDocument) -> anyhow::Result<()>) -> CmdResult<View> {
+fn edit(state: &Mutex<AppState>, f: impl FnOnce(&mut ConfigDocument) -> anyhow::Result<()>) -> CmdResult<View> {
     let mut s = state.lock().unwrap();
     let doc = s.doc.as_mut().ok_or("no file open")?;
+    let before = doc.text();
     f(doc).map_err(err)?;
-    s.dirty = true;
+    if doc.text() != before {
+        s.undo.push(before);
+        if s.undo.len() > UNDO_LIMIT {
+            s.undo.remove(0);
+        }
+        s.redo.clear();
+    }
     refresh_sim(&mut s);
     Ok(view(&s))
+}
+
+/// Moves one step through the history: from `from` (undo or redo) to the
+/// other stack.
+fn step_history(state: &Mutex<AppState>, undo: bool) -> CmdResult<View> {
+    let mut s = state.lock().unwrap();
+    let s = &mut *s;
+    let current = s.doc.as_ref().ok_or("no file open")?.text();
+    let (from, to) = if undo { (&mut s.undo, &mut s.redo) } else { (&mut s.redo, &mut s.undo) };
+    let Some(text) = from.pop() else { return Ok(view(s)) };
+    to.push(current);
+    s.doc = Some(ConfigDocument::parse(&text).map_err(err)?);
+    refresh_sim(s);
+    Ok(view(s))
+}
+
+#[tauri::command]
+fn undo(state: Shared) -> CmdResult<View> {
+    step_history(&state, true)
+}
+
+#[tauri::command]
+fn redo(state: Shared) -> CmdResult<View> {
+    step_history(&state, false)
 }
 
 // ---- Files ----
@@ -72,23 +139,16 @@ fn open_file(state: Shared, path: String) -> CmdResult<View> {
     let text = fs::read_to_string(&path).map_err(|e| format!("reading {path}: {e}"))?;
     let doc = ConfigDocument::parse(&text).map_err(err)?;
     let mut s = state.lock().unwrap();
-    s.doc = Some(doc);
-    s.path = Some(PathBuf::from(path));
-    s.dirty = false;
-    s.sim = None;
-    refresh_sim(&mut s);
+    s.load(doc, Some(PathBuf::from(path)), true);
     Ok(view(&s))
 }
 
 #[tauri::command]
 fn new_file(state: Shared) -> CmdResult<View> {
     let text = "name = \"New profile\"\n\n[layers.base]\nname = \"Base\"\n";
+    let doc = ConfigDocument::parse(text).map_err(err)?;
     let mut s = state.lock().unwrap();
-    s.doc = Some(ConfigDocument::parse(text).map_err(err)?);
-    s.path = None;
-    s.dirty = true;
-    s.sim = None;
-    refresh_sim(&mut s);
+    s.load(doc, None, false);
     Ok(view(&s))
 }
 
@@ -98,9 +158,9 @@ fn save_file(state: Shared, path: Option<String>) -> CmdResult<View> {
     let mut s = state.lock().unwrap();
     let target = path.map(PathBuf::from).or_else(|| s.path.clone()).ok_or("no file name")?;
     let text = s.doc.as_ref().ok_or("no file open")?.text();
-    fs::write(&target, text).map_err(|e| format!("writing {}: {e}", target.display()))?;
+    fs::write(&target, &text).map_err(|e| format!("writing {}: {e}", target.display()))?;
     s.path = Some(target);
-    s.dirty = false;
+    s.saved = Some(text);
     Ok(view(&s))
 }
 
@@ -169,6 +229,26 @@ fn set_palette(state: Shared, layer: Option<String>, category: String, color: Op
 #[tauri::command]
 fn set_setting(state: Shared, path: String, value: Option<SettingValue>) -> CmdResult<View> {
     edit(&state, |d| d.set_setting(&path, value))
+}
+
+#[tauri::command]
+fn set_layout(state: Shared, name: Option<String>) -> CmdResult<View> {
+    edit(&state, |d| d.set_layout(name.as_deref()))
+}
+
+#[tauri::command]
+fn set_layout_char(state: Shared, ch: String, keys: Option<Vec<String>>) -> CmdResult<View> {
+    edit(&state, |d| d.set_layout_char(&ch, keys.as_deref()))
+}
+
+#[tauri::command]
+fn set_indicator(state: Shared, led: String, key: Option<u8>, color: String) -> CmdResult<View> {
+    edit(&state, |d| d.set_indicator(&led, key, &color))
+}
+
+#[tauri::command]
+fn set_global(state: Shared, index: usize, action: Option<String>) -> CmdResult<View> {
+    edit(&state, |d| d.set_global(index, action.as_deref()))
 }
 
 // ---- Simulator ----
@@ -342,11 +422,7 @@ async fn device_pull(state: Shared<'_>, index: usize) -> CmdResult<View> {
     let config = bundle.profiles.get(index).ok_or_else(|| format!("no profile {index}"))?;
     let doc = ConfigDocument::parse(&to_toml::write(config)).map_err(err)?;
     let mut s = state.lock().unwrap();
-    s.doc = Some(doc);
-    s.path = None;
-    s.dirty = true;
-    s.sim = None;
-    refresh_sim(&mut s);
+    s.load(doc, None, false);
     Ok(view(&s))
 }
 
@@ -373,6 +449,12 @@ pub fn run() {
             set_key_color,
             set_palette,
             set_setting,
+            set_layout,
+            set_layout_char,
+            set_indicator,
+            set_global,
+            undo,
+            redo,
             sim_state,
             sim_run_macro,
             sim_reset,
@@ -394,6 +476,33 @@ pub fn run() {
 mod tests {
     use macropad_engine::Action;
     use macropad_engine::notation::parse_action;
+
+    #[test]
+    fn undo_redo_and_dirty_state() {
+        use super::*;
+        let state = Mutex::new(AppState::default());
+        state.lock().unwrap().load(ConfigDocument::parse("[layers.base]\n").unwrap(), None, true);
+        assert!(!state.lock().unwrap().dirty());
+
+        let v = edit(&state, |d| d.set_key("base", 0, "a")).unwrap();
+        assert!(v.dirty && v.can_undo && !v.can_redo);
+        edit(&state, |d| d.set_key("base", 1, "b")).unwrap();
+        // A rejected edit adds no history.
+        assert!(edit(&state, |d| d.set_key("base", 1, "nope+b")).is_err());
+
+        let v = step_history(&state, true).unwrap();
+        assert_eq!(v.doc.as_ref().unwrap().layers[0].keys[1].raw, "_");
+        assert!(v.can_undo && v.can_redo);
+        let v = step_history(&state, true).unwrap();
+        assert!(!v.dirty, "back at the saved text");
+        assert!(!v.can_undo);
+        let v = step_history(&state, false).unwrap();
+        assert_eq!(v.doc.as_ref().unwrap().layers[0].keys[0].raw, "a");
+
+        // A new edit clears the redo stack.
+        edit(&state, |d| d.set_key("base", 2, "c")).unwrap();
+        assert!(!step_history(&state, false).unwrap().doc.unwrap().layers[0].keys[1].raw.eq("b"));
+    }
 
     /// The app's key picker (src/lib/keys.json) only offers names the
     /// engine understands, and media entries are media keys.

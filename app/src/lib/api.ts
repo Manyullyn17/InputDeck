@@ -49,6 +49,16 @@ export interface SettingsView {
   tap: number | null;
   char_delay: number | null;
   palette: PaletteEntry[];
+  layout: {
+    /** As written; null = default ("us"). */
+    base: string | null;
+    /** What "system" means on this computer. */
+    detected: { Ok: string } | { Err: string };
+    chars: CharOverride[];
+  };
+  indicators: { led: IndicatorLed; key: number | null; color: string | null }[];
+  /** Global actions: keys 1-12, then the knob ("" = none). */
+  global: string[];
   defaults: {
     brightness: number;
     idle_level: number;
@@ -57,8 +67,15 @@ export interface SettingsView {
     off_after: number;
     tap: number;
     char_delay: number;
+    layout: string;
   };
 }
+
+export interface CharOverride {
+  ch: string;
+  keys: string[];
+}
+export type IndicatorLed = "caps_lock" | "num_lock" | "scroll_lock";
 
 export type SettingValue = boolean | number | string | null;
 
@@ -104,6 +121,8 @@ export interface DocumentView {
 export interface View {
   path: string | null;
   dirty: boolean;
+  can_undo: boolean;
+  can_redo: boolean;
   doc: DocumentView | null;
 }
 
@@ -151,6 +170,12 @@ export const api = {
   setPalette: (layer: string | null, category: Category, color: string | null) =>
     invoke<View>("set_palette", { layer, category, color }),
   setSetting: (path: string, value: SettingValue) => invoke<View>("set_setting", { path, value }),
+  setLayout: (name: string | null) => invoke<View>("set_layout", { name }),
+  setLayoutChar: (ch: string, keys: string[] | null) => invoke<View>("set_layout_char", { ch, keys }),
+  setIndicator: (led: IndicatorLed, key: number | null, color: string) => invoke<View>("set_indicator", { led, key, color }),
+  setGlobal: (index: number, action: string | null) => invoke<View>("set_global", { index, action }),
+  undo: () => invoke<View>("undo"),
+  redo: () => invoke<View>("redo"),
 
   simState: () => invoke<SimState>("sim_state"),
   simReset: () => invoke<SimState>("sim_reset"),

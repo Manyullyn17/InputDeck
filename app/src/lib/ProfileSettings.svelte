@@ -1,18 +1,49 @@
 <script lang="ts">
-  import { CATEGORY_LABELS, type Category, type SettingValue, type SettingsView } from "./api";
+  import { api, CATEGORY_LABELS, type IndicatorLed, type SettingValue, type SettingsView, type View } from "./api";
   import ColorField from "./ColorField.svelte";
+  import KeyPicker from "./KeyPicker.svelte";
 
   let {
     settings,
-    onset,
-    onpalette,
+    report,
   }: {
     settings: SettingsView;
-    onset: (path: string, value: SettingValue) => void;
-    onpalette: (category: Category, color: string | null) => void;
+    /** Runs an edit; errors are shown by the page. */
+    report: (edit: Promise<View>) => void;
   } = $props();
 
   const d = $derived(settings.defaults);
+  const onset = (path: string, value: SettingValue) => report(api.setSetting(path, value));
+
+  // ---- Layout ----
+  const PRESETS = ["us", "de", "system"];
+  const layoutChoice = $derived(
+    settings.layout.base === null ? "" : PRESETS.includes(settings.layout.base) ? settings.layout.base : "custom",
+  );
+  let customLayout = $state(false);
+  const detected = $derived("Ok" in settings.layout.detected ? settings.layout.detected.Ok : null);
+  let newChar = $state("");
+  let newKeys = $state("");
+
+  function chooseLayout(value: string) {
+    customLayout = value === "custom";
+    if (!customLayout) report(api.setLayout(value || null));
+  }
+
+  function addChar() {
+    const keys = newKeys.trim().split(/\s+/).filter(Boolean);
+    if (!newChar || !keys.length) return;
+    report(api.setLayoutChar(newChar, keys));
+    newChar = "";
+    newKeys = "";
+  }
+
+  // ---- Indicators ----
+  const LED_LABELS: Record<IndicatorLed, string> = { caps_lock: "Caps Lock", num_lock: "Num Lock", scroll_lock: "Scroll Lock" };
+
+  // ---- Global keys ----
+  let pickingGlobal = $state<number | null>(null);
+  const globalLabel = (i: number) => (i === 12 ? "Knob" : `Key ${i + 1}`);
 
   /** A number field's value: empty = default (null). */
   function num(e: Event & { currentTarget: HTMLInputElement }): number | null {
@@ -26,6 +57,13 @@
     return `${s} s`;
   }
 </script>
+
+{#if pickingGlobal !== null}
+  <KeyPicker
+    onpick={(name) => pickingGlobal !== null && report(api.setGlobal(pickingGlobal, name))}
+    onclose={() => (pickingGlobal = null)}
+  />
+{/if}
 
 <div class="settings">
   <h2>Profile settings</h2>
@@ -99,9 +137,114 @@
           value={entry.raw}
           inherited={entry.inherited}
           unsetLabel="Default"
-          onchange={(c) => onpalette(entry.category, c)}
+          onchange={(c) => report(api.setPalette(null, entry.category, c))}
         />
       {/each}
+    </div>
+  </section>
+
+  <section>
+    <h3>Lock indicators</h3>
+    <p class="help">Light a key while the computer's lock is on. Overrides that key's color.</p>
+    {#each settings.indicators as ind}
+      <div class="row">
+        <span>{LED_LABELS[ind.led]}</span>
+        <select
+          value={ind.key ?? ""}
+          onchange={(e) => {
+            const v = e.currentTarget.value;
+            report(api.setIndicator(ind.led, v ? Number(v) : null, ind.color ?? "#ffffff"));
+          }}
+        >
+          <option value="">Not shown</option>
+          {#each Array.from({ length: 12 }, (_, i) => i + 1) as k}<option value={k}>Key {k}</option>{/each}
+        </select>
+        {#if ind.key !== null}
+          <input
+            type="color"
+            class="color"
+            value={ind.color ?? "#ffffff"}
+            onchange={(e) => report(api.setIndicator(ind.led, ind.key, e.currentTarget.value))}
+            title="Indicator color"
+          />
+        {/if}
+      </div>
+    {/each}
+  </section>
+
+  <section>
+    <h3>Global keys</h3>
+    <p class="help">Used on every layer that leaves the key on Inherit. Keys and media keys only.</p>
+    <div class="globals">
+      {#each settings.global as action, i}
+        <label class="global">
+          <span>{globalLabel(i)}</span>
+          <input
+            class="mono"
+            value={action}
+            placeholder="—"
+            onchange={(e) => report(api.setGlobal(i, e.currentTarget.value || null))}
+          />
+          <button class="small" type="button" onclick={() => (pickingGlobal = i)} title="Pick or press a key">⌨</button>
+        </label>
+      {/each}
+    </div>
+  </section>
+
+  <section>
+    <h3>Typing layout</h3>
+    <p class="help">
+      Type text steps become key presses for this keyboard layout when you upload. Choose the layout of the computer you type
+      into.
+    </p>
+    <label class="row">
+      <span>Layout</span>
+      <select value={customLayout ? "custom" : layoutChoice} onchange={(e) => chooseLayout(e.currentTarget.value)}>
+        <option value="">Default ({d.layout.toUpperCase()})</option>
+        <option value="us">US</option>
+        <option value="de">German</option>
+        <option value="system">This computer's layout{detected ? ` (${detected})` : " (not detected)"}</option>
+        <option value="custom">Other XKB layout…</option>
+      </select>
+    </label>
+    {#if customLayout || layoutChoice === "custom"}
+      <label class="row">
+        <span>XKB name</span>
+        <input
+          class="mono"
+          value={layoutChoice === "custom" ? settings.layout.base : "xkb:"}
+          placeholder="xkb:fr, xkb:de(nodeadkeys)…"
+          onchange={(e) => report(api.setLayout(e.currentTarget.value))}
+        />
+      </label>
+      <p class="help">A file in /usr/share/X11/xkb/symbols, optionally with a variant in parentheses.</p>
+    {/if}
+    {#if layoutChoice === "system"}
+      <p class="help">
+        {#if detected}Resolved when uploading, on this computer: {detected}.{:else}{"Err" in settings.layout.detected ? settings.layout.detected.Err : ""}{/if}
+      </p>
+    {/if}
+
+    <h4>Character overrides</h4>
+    <p class="help">
+      For characters the layout can't type, or to type them differently. Several keys are pressed one after another (e.g. a dead
+      key, then a letter).
+    </p>
+    {#if settings.layout.chars.length}
+      <ul class="chars">
+        {#each settings.layout.chars as c}
+          <li>
+            <span class="ch">{c.ch}</span>
+            <span class="mono keys">{c.keys.join(" → ")}</span>
+            <button class="small" onclick={() => report(api.setLayoutChar(c.ch, null))} title="Remove">✕</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <div class="row add-char">
+      <input class="ch-input" bind:value={newChar} placeholder="é" maxlength="2" />
+      <input class="mono grow" bind:value={newKeys} placeholder="keys, e.g. ralt+e  or  ' e" onkeydown={(e) => e.key === "Enter" && addChar()} />
+      <button onclick={addChar} disabled={!newChar || !newKeys.trim()}>Add</button>
     </div>
   </section>
 
@@ -193,5 +336,64 @@
   .small {
     padding: 2px 8px;
     font-size: 12px;
+  }
+  h4 {
+    margin: 8px 0 0;
+    font-size: 13px;
+  }
+  .color {
+    width: 44px;
+    height: 30px;
+    padding: 2px;
+  }
+  .globals {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+    gap: 6px 10px;
+  }
+  .global {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .global span {
+    width: 44px;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .global input {
+    flex: 1;
+    min-width: 0;
+  }
+  .chars {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .chars li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .ch {
+    width: 32px;
+    text-align: center;
+    font-size: 18px;
+  }
+  .keys {
+    flex: 1;
+    font-size: 12px;
+  }
+  .ch-input {
+    width: 48px;
+    text-align: center;
+  }
+  .grow {
+    flex: 1;
+    min-width: 0;
   }
 </style>

@@ -14,7 +14,9 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 use crate::toml_config::{self, BASE, NO_PARENT};
 
 mod settings;
-pub use settings::{CATEGORIES, KeyColors, PaletteEntry, SLOTS, SettingValue, SettingsView};
+pub use settings::{
+    CATEGORIES, CharOverride, INDICATORS, IndicatorView, KeyColors, LayoutView, PaletteEntry, SLOTS, SettingValue, SettingsView,
+};
 
 /// Index of the encoder button in key lists (after the 12 keys).
 pub const ENCODER_PRESS: usize = KEY_COUNT;

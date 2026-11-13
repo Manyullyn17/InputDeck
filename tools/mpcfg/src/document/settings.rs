@@ -1,15 +1,18 @@
 //! Colors and profile settings of a [`ConfigDocument`]: per-key colors,
 //! layer and global palettes, LED/idle/timing settings and the name.
 
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use macropad_engine::led::{Color, HeldStyle, LedSettings, Palette};
-use macropad_engine::notation::{parse_color, write_color};
+use macropad_engine::notation::{parse_action, parse_color, write_color};
 use macropad_engine::{Config, IdleSettings, KEY_COUNT, LayerId, MacroTiming};
 use serde::{Deserialize, Serialize};
-use toml_edit::{DocumentMut, InlineTable, Item, Table, TableLike, Value};
+use std::sync::OnceLock;
+
+use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, TableLike, Value};
 
 use super::ConfigDocument;
-use crate::toml_config::{self, BASE};
+use crate::layouts;
+use crate::toml_config::{self, BASE, DEFAULT_LAYOUT};
 
 /// Palette categories as named in the file, in display order.
 pub const CATEGORIES: [&str; 6] = ["layer_key", "key", "modified", "media", "macro", "unbound"];
@@ -47,7 +50,86 @@ pub struct SettingsView {
     pub tap: Option<i64>,
     pub char_delay: Option<i64>,
     pub palette: Vec<PaletteEntry>,
+    pub layout: LayoutView,
+    pub indicators: Vec<IndicatorView>,
+    /// Global actions as written: keys 1-12, then the knob ("" = none).
+    pub global: Vec<String>,
     pub defaults: SettingsDefaults,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct LayoutView {
+    /// As written (`None` = the default, "us").
+    pub base: Option<String>,
+    /// What `system` resolves to on this computer, or why it can't.
+    pub detected: Result<String, String>,
+    /// Per-character overrides, in file order.
+    pub chars: Vec<CharOverride>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct CharOverride {
+    pub ch: String,
+    /// One key, or a sequence (dead key, then letter).
+    pub keys: Vec<String>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct IndicatorView {
+    /// "caps_lock", "num_lock" or "scroll_lock".
+    pub led: &'static str,
+    /// Key number 1-12 (`None` = no indicator).
+    pub key: Option<u8>,
+    pub color: Option<String>,
+}
+
+/// Lock indicators as named in the file.
+pub const INDICATORS: [&str; 3] = ["caps_lock", "num_lock", "scroll_lock"];
+
+/// The detected system layout, looked up once per run.
+fn detected_layout() -> Result<String, String> {
+    static DETECTED: OnceLock<Result<String, String>> = OnceLock::new();
+    DETECTED.get_or_init(|| layouts::detect_system().map_err(|e| format!("{e:#}"))).clone()
+}
+
+/// The `[global]` key for button index 0-12.
+fn global_key(index: usize) -> Result<String> {
+    match index {
+        0..KEY_COUNT => Ok((index + 1).to_string()),
+        KEY_COUNT => Ok("encoder".to_string()),
+        _ => bail!("button index {index} out of range"),
+    }
+}
+
+/// Replaces `layout = "x"` by a `[layout]` table with `base = "x"`.
+fn layout_as_table(doc: &mut DocumentMut) -> &mut Table {
+    let base = doc.get("layout").and_then(|v| v.as_str()).map(String::from);
+    if !doc.get("layout").is_some_and(Item::is_table) {
+        let mut t = Table::new();
+        if let Some(b) = base {
+            t.insert("base", toml_edit::value(b));
+        }
+        doc.insert("layout", Item::Table(t));
+    }
+    doc["layout"].as_table_mut().expect("just made a table")
+}
+
+/// Turns a `[layout]` table without overrides back into `layout = "x"`
+/// (or removes it when nothing is left).
+fn tidy_layout(doc: &mut DocumentMut) {
+    let Some(t) = doc.get("layout").and_then(Item::as_table) else { return };
+    let has_chars = t.get("chars").and_then(Item::as_table_like).is_some_and(|c| !c.is_empty());
+    if has_chars {
+        return;
+    }
+    match t.get("base").and_then(|v| v.as_str()).map(String::from) {
+        Some(base) => {
+            doc.insert("layout", toml_edit::value(base));
+        }
+        None => {
+            doc.remove("layout");
+        }
+    }
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -59,6 +141,7 @@ pub struct SettingsDefaults {
     pub off_after: u16,
     pub tap: u16,
     pub char_delay: u16,
+    pub layout: &'static str,
 }
 
 /// A setting value from the app.
@@ -255,6 +338,124 @@ impl ConfigDocument {
         })
     }
 
+    /// Sets the keyboard layout used for typing text (`None` = default).
+    pub fn set_layout(&mut self, name: Option<&str>) -> Result<()> {
+        let name = name.map(str::trim).filter(|n| !n.is_empty());
+        if let Some(n) = name {
+            layouts::load(n).with_context(|| format!("layout '{n}'"))?;
+        }
+        self.try_edit(|doc| {
+            if doc.get("layout").is_some_and(Item::is_table) {
+                let t = doc["layout"].as_table_mut().unwrap();
+                match name {
+                    Some(n) => t.insert("base", toml_edit::value(n)),
+                    None => t.remove("base"),
+                };
+                tidy_layout(doc);
+            } else {
+                match name {
+                    Some(n) => {
+                        let mut v = Value::from(n);
+                        if let Some(old) = doc.get("layout").and_then(Item::as_value) {
+                            *v.decor_mut() = old.decor().clone();
+                        }
+                        doc.insert("layout", Item::Value(v));
+                    }
+                    None => {
+                        doc.remove("layout");
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Sets how one character is typed (`None` or no keys: use the layout).
+    pub fn set_layout_char(&mut self, ch: &str, keys: Option<&[String]>) -> Result<()> {
+        let mut chars = ch.chars();
+        let (Some(c), None) = (chars.next(), chars.next()) else { bail!("'{ch}' must be a single character") };
+        let keys: Vec<&str> = keys.unwrap_or_default().iter().map(|k| k.trim()).filter(|k| !k.is_empty()).collect();
+        for k in &keys {
+            toml_config::stroke(k)?;
+        }
+        let ch = c.to_string();
+        self.try_edit(|doc| {
+            if keys.is_empty() {
+                if let Some(chars) = doc.get_mut("layout").and_then(|l| l.get_mut("chars")).and_then(Item::as_table_like_mut) {
+                    chars.remove(&ch);
+                }
+            } else {
+                let value = match keys.as_slice() {
+                    [one] => Value::from(*one),
+                    many => Value::Array(many.iter().copied().collect::<Array>()),
+                };
+                let layout = layout_as_table(doc);
+                let chars = layout.entry("chars").or_insert(Item::Table(Table::new()));
+                chars.as_table_like_mut().ok_or_else(|| anyhow!("layout.chars is not a table"))?.insert(&ch, Item::Value(value));
+            }
+            tidy_layout(doc);
+            Ok(())
+        })
+    }
+
+    /// Shows a host lock state on a key (`key: None` removes the indicator).
+    pub fn set_indicator(&mut self, led: &str, key: Option<u8>, color: &str) -> Result<()> {
+        ensure!(INDICATORS.contains(&led), "unknown indicator '{led}'");
+        let value = match key {
+            None => None,
+            Some(k) => {
+                ensure!((1..=KEY_COUNT as u8).contains(&k), "key must be 1-{KEY_COUNT}");
+                let Ok(Color::Rgb(_)) = parse_color(color) else { bail!("indicator color must be #rrggbb") };
+                let mut t = InlineTable::new();
+                t.insert("key", Value::from(k as i64));
+                t.insert("color", Value::from(color.to_ascii_lowercase()));
+                Some(Value::InlineTable(t))
+            }
+        };
+        self.try_edit(|doc| {
+            set_path(doc.as_table_mut(), &["indicators", led], value, true);
+            Ok(())
+        })
+    }
+
+    /// Sets a global (layer-independent) action for button index 0-12.
+    pub fn set_global(&mut self, index: usize, action: Option<&str>) -> Result<()> {
+        let key = global_key(index)?;
+        let action = action.map(str::trim).filter(|a| !a.is_empty() && *a != "_" && *a != "none");
+        if let Some(a) = action {
+            parse_action(a).map_err(|e| anyhow!("'{a}': {e} (global keys can only be keys and media keys)"))?;
+        }
+        self.try_edit(|doc| {
+            set_path(doc.as_table_mut(), &["global", &key], action.map(Value::from), true);
+            Ok(())
+        })
+    }
+
+    fn layout_view(&self) -> LayoutView {
+        let layout = self.doc.get("layout");
+        let base = match layout {
+            Some(l) if l.is_table() => l.get("base").and_then(|v| v.as_str()).map(String::from),
+            Some(l) => l.as_str().map(String::from),
+            None => None,
+        };
+        let chars = layout
+            .and_then(|l| l.get("chars"))
+            .and_then(Item::as_table_like)
+            .map(|t| {
+                t.iter()
+                    .map(|(ch, v)| CharOverride {
+                        ch: ch.to_string(),
+                        keys: match v.as_array() {
+                            Some(a) => a.iter().filter_map(|k| k.as_str().map(String::from)).collect(),
+                            None => v.as_str().map(String::from).into_iter().collect(),
+                        },
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        LayoutView { base, detected: detected_layout(), chars }
+    }
+
     pub(super) fn key_colors_raw(&self, layer: &str, index: usize) -> KeyColors {
         let key = (index + 1).to_string();
         let colors = get_path(self.doc.as_item(), &["layers", layer, "colors", &key]);
@@ -306,6 +507,24 @@ impl ConfigDocument {
                     inherited: color_text(palette_get(&Palette::DEFAULT, category)),
                 })
                 .collect(),
+            layout: self.layout_view(),
+            indicators: INDICATORS
+                .iter()
+                .map(|&led| {
+                    let t = get_path(root, &["indicators", led]);
+                    IndicatorView {
+                        led,
+                        key: t.and_then(|t| t.get("key")).and_then(|v| v.as_integer()).map(|k| k as u8),
+                        color: t.and_then(|t| t.get("color")).and_then(|v| v.as_str()).map(String::from),
+                    }
+                })
+                .collect(),
+            global: (0..=KEY_COUNT)
+                .map(|i| {
+                    let key = global_key(i).unwrap();
+                    get_path(root, &["global", &key]).and_then(|v| v.as_str()).unwrap_or("").to_string()
+                })
+                .collect(),
             defaults: SettingsDefaults {
                 brightness: percent(d.brightness),
                 idle_level: percent(d.idle_level),
@@ -318,6 +537,7 @@ impl ConfigDocument {
                 off_after: IdleSettings::DEFAULT.off_after_s,
                 tap: MacroTiming::DEFAULT.tap_ms,
                 char_delay: MacroTiming::DEFAULT.char_delay_ms,
+                layout: DEFAULT_LAYOUT,
             },
         }
     }
@@ -399,6 +619,60 @@ mod tests {
         d.set_setting("leds.brightness", None).unwrap();
         assert_eq!(d.view().settings.brightness, None);
         assert_eq!(d.view().settings.defaults.brightness, 63);
+    }
+
+    #[test]
+    fn layout_overrides_switch_between_string_and_table() {
+        let mut d = ConfigDocument::parse(DEMO).unwrap();
+        assert_eq!(d.view().settings.layout.base.as_deref(), Some("us"));
+        d.set_layout_char("é", Some(&["0x34".into(), "e".into()])).unwrap();
+        d.set_layout_char("ß", Some(&["ralt+s".into()])).unwrap();
+        let text = d.text();
+        assert!(text.contains("[layout]\nbase = \"us\"\n"), "{text}");
+        assert!(text.contains("[layout.chars]\n\"é\" = [\"0x34\", \"e\"]\n\"ß\" = \"ralt+s\""), "{text}");
+        let l = d.view().settings.layout;
+        assert_eq!(l.chars[0], CharOverride { ch: "é".into(), keys: vec!["0x34".into(), "e".into()] });
+        assert_eq!(d.view().error, None);
+
+        d.set_layout(Some("de")).unwrap_or_else(|e| panic!("{e:#}"));
+        assert_eq!(d.view().settings.layout.base.as_deref(), Some("de"));
+        assert!(d.set_layout_char("ab", Some(&["a".into()])).is_err());
+        assert!(d.set_layout_char("x", Some(&["vol+".into()])).is_err());
+        assert!(d.set_layout(Some("klingon")).is_err());
+
+        // Removing the overrides goes back to `layout = "de"`.
+        d.set_layout_char("é", None).unwrap();
+        d.set_layout_char("ß", Some(&[])).unwrap();
+        assert!(d.text().contains("layout = \"de\""), "{}", d.text());
+        assert!(!d.text().contains("[layout"));
+        d.set_layout(None).unwrap();
+        assert!(!d.text().contains("\nlayout ="), "{}", d.text());
+        assert_eq!(d.view().error, None);
+    }
+
+    #[test]
+    fn indicators_and_global_keys() {
+        let mut d = ConfigDocument::parse(DEMO).unwrap();
+        let s = d.view().settings;
+        assert_eq!((s.indicators[0].key, s.indicators[0].color.as_deref()), (Some(12), Some("#ffffff")));
+        assert_eq!(s.global.len(), 13);
+
+        d.set_indicator("num_lock", Some(3), "#00FF00").unwrap();
+        assert!(d.text().contains("num_lock = { key = 3, color = \"#00ff00\" }"), "{}", d.text());
+        assert!(d.set_indicator("num_lock", Some(13), "#00ff00").is_err());
+        assert!(d.set_indicator("num_lock", Some(3), "off").is_err());
+        d.set_indicator("caps_lock", None, "").unwrap();
+        assert!(!d.text().contains("caps_lock = {"));
+
+        d.set_global(11, Some("mute")).unwrap();
+        d.set_global(12, Some("playpause")).unwrap();
+        assert!(d.set_global(0, Some("layer:one")).is_err());
+        assert!(d.set_global(13, Some("a")).is_err());
+        let s = d.view().settings;
+        assert_eq!((s.global[11].as_str(), s.global[12].as_str()), ("mute", "playpause"));
+        assert_eq!(d.view().error, None);
+        d.set_global(11, None).unwrap();
+        assert_eq!(d.view().settings.global[11], "");
     }
 
     #[test]

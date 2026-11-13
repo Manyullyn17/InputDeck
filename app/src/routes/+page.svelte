@@ -21,7 +21,7 @@
   import MacroEditor from "$lib/MacroEditor.svelte";
   import Simulator from "$lib/Simulator.svelte";
 
-  let view = $state<View>({ path: null, dirty: false, doc: null });
+  let view = $state<View>({ path: null, dirty: false, can_undo: false, can_redo: false, doc: null });
   let layerId = $state("base");
   let target = $state<number | "cw" | "ccw" | null>(0);
   let toast = $state<string | null>(null);
@@ -158,7 +158,27 @@
     await simulator?.runMacro(macroId);
   }
 
+  /** Text fields keep their own undo (Ctrl+Z) behavior. */
+  function inTextField(e: KeyboardEvent): boolean {
+    const t = e.target as HTMLElement | null;
+    return !!t && (t.tagName === "TEXTAREA" || t.tagName === "SELECT" || (t.tagName === "INPUT" && !["checkbox", "range", "color"].includes((t as HTMLInputElement).type)));
+  }
+
   function onKeydown(e: KeyboardEvent) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !inTextField(e) && doc) {
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        if (view.can_undo) report(api.undo());
+        return;
+      }
+      if ((k === "z" && e.shiftKey) || k === "y") {
+        e.preventDefault();
+        if (view.can_redo) report(api.redo());
+        return;
+      }
+    }
     if ((e.ctrlKey || e.metaKey) && e.key === "s") {
       e.preventDefault();
       saveFile();
@@ -196,6 +216,9 @@
     <button onclick={openFile}>Open…</button>
     <button onclick={saveFile} disabled={!doc}>Save</button>
     <button onclick={saveAs} disabled={!doc}>Save as…</button>
+    <span class="sep"></span>
+    <button onclick={() => report(api.undo())} disabled={!view.can_undo} title="Undo (Ctrl+Z)">↶ Undo</button>
+    <button onclick={() => report(api.redo())} disabled={!view.can_redo} title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
     {#if doc}
       <div class="file">
         <span class="mono">{fileName}</span>
@@ -272,11 +295,7 @@
       <section class="center">
         {#if settingsOpen}
           <div class="panel">
-            <ProfileSettings
-              settings={doc.settings}
-              onset={(path, value) => report(api.setSetting(path, value))}
-              onpalette={(category, color) => report(api.setPalette(null, category, color))}
-            />
+            <ProfileSettings settings={doc.settings} {report} />
           </div>
         {:else if macro}
           <div class="panel">
@@ -393,6 +412,12 @@
     padding: 10px 16px;
     background: var(--panel);
     border-bottom: 1px solid var(--border);
+  }
+  .sep {
+    width: 1px;
+    align-self: stretch;
+    margin: 0 4px;
+    background: var(--border);
   }
   .brand {
     font-weight: 700;
