@@ -112,6 +112,14 @@ impl Sh1106 {
         self.command(&[0xAF]).await;
     }
 
+    pub async fn off(&mut self) {
+        self.command(&[0xAE]).await;
+    }
+
+    pub async fn set_contrast(&mut self, contrast: u8) {
+        self.command(&[0x81, contrast]).await;
+    }
+
     async fn command(&mut self, bytes: &[u8]) {
         self.dc.set_low();
         self.cs.set_low();
@@ -135,9 +143,18 @@ impl Sh1106 {
     }
 }
 
+/// Inactivity stage, shared by OLED and LEDs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    Active,
+    Dim,
+    Off,
+}
+
 /// Everything the status screen shows, copied out of the engine.
 #[derive(Clone)]
 pub struct Snapshot {
+    pub phase: Phase,
     pub layer: LayerId,
     pub path: Vec<LayerId, BUTTON_COUNT>,
     pub held: [bool; BUTTON_COUNT],

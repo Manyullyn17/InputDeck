@@ -7,6 +7,8 @@
 //! Order-independent combos need no special type: both orderings simply
 //! point at the same target layer.
 
+use crate::led::{KeyColor, LedSettings, Palette};
+
 /// Number of mechanical keys.
 pub const KEY_COUNT: usize = 12;
 /// Number of buttons: the 12 keys plus the encoder push button.
@@ -107,6 +109,12 @@ pub struct Layer {
     pub buttons: [KeyBinding; BUTTON_COUNT],
     pub encoder_cw: EncoderBinding,
     pub encoder_ccw: EncoderBinding,
+    /// Per-category LED colors for this layer; `Inherit` entries fall back
+    /// to the parent layer's palette, then the global one.
+    pub palette: Palette,
+    /// Per-key LED colors. They belong to this layer's bindings and follow
+    /// them when another layer inherits the binding.
+    pub key_colors: [KeyColor; KEY_COUNT],
 }
 
 impl Layer {
@@ -117,6 +125,8 @@ impl Layer {
             buttons: [KeyBinding::Inherit; BUTTON_COUNT],
             encoder_cw: EncoderBinding::Inherit,
             encoder_ccw: EncoderBinding::Inherit,
+            palette: Palette::INHERIT,
+            key_colors: [KeyColor::INHERIT; KEY_COUNT],
         }
     }
 
@@ -127,6 +137,8 @@ impl Layer {
             buttons: [KeyBinding::None; BUTTON_COUNT],
             encoder_cw: EncoderBinding::None,
             encoder_ccw: EncoderBinding::None,
+            palette: Palette::INHERIT,
+            key_colors: [KeyColor::INHERIT; KEY_COUNT],
         }
     }
 
@@ -143,6 +155,30 @@ pub struct Config<'a> {
     /// whose own binding for the button is [`KeyBinding::Inherit`]. Any
     /// explicit binding on the current layer (including `None`) wins.
     pub global: [Option<Action>; BUTTON_COUNT],
+    pub leds: LedSettings,
+    pub idle: IdleSettings,
+}
+
+/// Inactivity timeouts for LEDs and OLED, in seconds. 0 disables a stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IdleSettings {
+    pub dim_after_s: u16,
+    pub off_after_s: u16,
+}
+
+impl IdleSettings {
+    pub const DEFAULT: IdleSettings = IdleSettings { dim_after_s: 60, off_after_s: 600 };
+}
+
+/// Where an effective binding came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// The binding is defined on this layer.
+    Layer(LayerId),
+    /// The button's global (layer-independent) action.
+    Global,
+    /// Nothing is bound anywhere.
+    Unbound,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,7 +194,12 @@ pub enum ConfigError {
 
 impl<'a> Config<'a> {
     pub const fn new(layers: &'a [Layer]) -> Self {
-        Config { layers, global: [None; BUTTON_COUNT] }
+        Config {
+            layers,
+            global: [None; BUTTON_COUNT],
+            leds: LedSettings::DEFAULT,
+            idle: IdleSettings::DEFAULT,
+        }
     }
 
     pub fn layer(&self, id: LayerId) -> Option<&Layer> {
@@ -172,30 +213,39 @@ impl<'a> Config<'a> {
     /// then fallthrough through the parent chain. Only actions are passed
     /// down by fallthrough; an inherited layer key resolves to `None`.
     pub fn resolve_button(&self, layer: LayerId, button: Button) -> KeyBinding {
+        self.resolve_button_source(layer, button).0
+    }
+
+    /// Like [`Config::resolve_button`], also reporting where the binding was
+    /// defined (used to pick the key's LED color).
+    pub fn resolve_button_source(&self, layer: LayerId, button: Button) -> (KeyBinding, Source) {
+        const UNBOUND: (KeyBinding, Source) = (KeyBinding::None, Source::Unbound);
         let i = button.index();
         let Some(start) = self.layer(layer) else {
-            return KeyBinding::None;
+            return UNBOUND;
         };
-        if start.buttons[i] != KeyBinding::Inherit {
-            return start.buttons[i];
+        match start.buttons[i] {
+            KeyBinding::Inherit => {}
+            KeyBinding::None => return UNBOUND,
+            explicit => return (explicit, Source::Layer(layer)),
         }
         if let Some(action) = self.global[i] {
-            return KeyBinding::Action(action);
+            return (KeyBinding::Action(action), Source::Global);
         }
         let Some(parent) = start.parent else {
-            return KeyBinding::None;
+            return UNBOUND;
         };
-        self.walk(parent, |l| match l.buttons[i] {
+        self.walk(parent, |id, l| match l.buttons[i] {
             KeyBinding::Inherit => None,
-            KeyBinding::Action(a) => Some(KeyBinding::Action(a)),
-            KeyBinding::None | KeyBinding::Layer(_) => Some(KeyBinding::None),
+            KeyBinding::Action(a) => Some((KeyBinding::Action(a), Source::Layer(id))),
+            KeyBinding::None | KeyBinding::Layer(_) => Some(UNBOUND),
         })
-        .unwrap_or(KeyBinding::None)
+        .unwrap_or(UNBOUND)
     }
 
     /// Effective action for one encoder step on `layer`, after fallthrough.
     pub fn resolve_encoder(&self, layer: LayerId, dir: Direction) -> Option<Action> {
-        self.walk(layer, |l| {
+        self.walk(layer, |_, l| {
             let binding = match dir {
                 Direction::Clockwise => l.encoder_cw,
                 Direction::CounterClockwise => l.encoder_ccw,
@@ -211,11 +261,16 @@ impl<'a> Config<'a> {
 
     /// Follows the parent chain from `start` until `pick` returns `Some`.
     /// Bounded by the layer count so an invalid (cyclic) config can't hang.
-    fn walk<T>(&self, start: LayerId, mut pick: impl FnMut(&Layer) -> Option<T>) -> Option<T> {
+    pub(crate) fn walk<T>(
+        &self,
+        start: LayerId,
+        mut pick: impl FnMut(LayerId, &Layer) -> Option<T>,
+    ) -> Option<T> {
         let mut current = Some(start);
         for _ in 0..self.layers.len() {
-            let layer = self.layer(current?)?;
-            if let Some(found) = pick(layer) {
+            let id = current?;
+            let layer = self.layer(id)?;
+            if let Some(found) = pick(id, layer) {
                 return Some(found);
             }
             current = layer.parent;

@@ -38,20 +38,38 @@ pub enum Output {
     LayerChanged(LayerId),
 }
 
-/// What a held button is doing, fixed at the moment it was pressed.
+/// What a held button is doing, fixed at the moment it was pressed. The
+/// `LayerId` is the layer it was pressed on (used for its LED color).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Held {
     Up,
     Nothing,
-    Action(Action),
-    Layer,
+    Action(Action, LayerId),
+    Layer(LayerId),
 }
 
 #[derive(Clone, Copy, Debug)]
 struct Entry {
     button: Button,
+    /// Layer entered by this key.
     layer: LayerId,
+    /// Layer the key was pressed on.
+    from: LayerId,
     held: bool,
+}
+
+/// What a key's LED should reflect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeyLight {
+    /// Not pressed: show its binding on the current layer.
+    Idle,
+    /// Physically held: show the binding it was pressed with.
+    Held { pressed_on: LayerId },
+    /// Released layer key still in the layer path (falling back goes
+    /// through it): shown dimmed.
+    PathAnchor { pressed_on: LayerId },
+    // Planned: `Active` for toggled-on keys (active color while on) and
+    // `Running` for one-shot macros still executing (held color until done).
 }
 
 /// Maximum path length. Held entries never exceed [`BUTTON_COUNT`]; the rest
@@ -75,7 +93,8 @@ impl Default for Engine {
 impl Engine {
     pub const fn new() -> Self {
         Engine {
-            stack: [Entry { button: Button(0), layer: LayerId::BASE, held: false }; MAX_DEPTH],
+            stack: [Entry { button: Button(0), layer: LayerId::BASE, from: LayerId::BASE, held: false };
+                MAX_DEPTH],
             depth: 0,
             held: [Held::Up; BUTTON_COUNT],
         }
@@ -99,6 +118,18 @@ impl Engine {
         self.held[button.index()] != Held::Up
     }
 
+    pub fn key_light(&self, button: Button) -> KeyLight {
+        match self.held[button.index()] {
+            Held::Action(_, from) | Held::Layer(from) => KeyLight::Held { pressed_on: from },
+            Held::Nothing => KeyLight::Held { pressed_on: self.layer() },
+            Held::Up => self.stack[..self.depth]
+                .iter()
+                .rev()
+                .find(|e| !e.held && e.button == button)
+                .map_or(KeyLight::Idle, |e| KeyLight::PathAnchor { pressed_on: e.from }),
+        }
+    }
+
     pub fn handle(
         &mut self,
         config: &Config,
@@ -116,18 +147,18 @@ impl Engine {
                 self.held[i] = match config.resolve_button(before, button) {
                     KeyBinding::Action(a) => {
                         out(Output::Press(a));
-                        Held::Action(a)
+                        Held::Action(a, before)
                     }
                     KeyBinding::Layer(target) => {
-                        self.push(button, target);
-                        Held::Layer
+                        self.push(button, target, before);
+                        Held::Layer(before)
                     }
                     KeyBinding::None | KeyBinding::Inherit => Held::Nothing,
                 };
             }
             Event::Release(button) => match replace(&mut self.held[button.index()], Held::Up) {
-                Held::Action(a) => out(Output::Release(a)),
-                Held::Layer => {
+                Held::Action(a, _) => out(Output::Release(a)),
+                Held::Layer(_) => {
                     self.mark_released(button);
                     self.settle();
                 }
@@ -150,7 +181,7 @@ impl Engine {
     pub fn reset(&mut self, out: &mut impl FnMut(Output)) {
         let before = self.layer();
         for held in &mut self.held {
-            if let Held::Action(a) = replace(held, Held::Up) {
+            if let Held::Action(a, _) = replace(held, Held::Up) {
                 out(Output::Release(a));
             }
         }
@@ -160,7 +191,7 @@ impl Engine {
         }
     }
 
-    fn push(&mut self, button: Button, layer: LayerId) {
+    fn push(&mut self, button: Button, layer: LayerId, from: LayerId) {
         if self.depth == MAX_DEPTH {
             // At most BUTTON_COUNT entries are held, so a released one exists.
             if let Some(pos) = self.stack.iter().position(|e| !e.held) {
@@ -168,7 +199,7 @@ impl Engine {
                 self.depth -= 1;
             }
         }
-        self.stack[self.depth] = Entry { button, layer, held: true };
+        self.stack[self.depth] = Entry { button, layer, from, held: true };
         self.depth += 1;
     }
 
@@ -192,7 +223,7 @@ impl Engine {
             }
             let held = &mut self.held[top.button.index()];
             if *held == Held::Nothing {
-                *held = Held::Layer;
+                *held = Held::Layer(top.from);
                 top.held = true;
                 return;
             }

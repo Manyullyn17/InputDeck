@@ -9,8 +9,17 @@
 //! - L4 (parent L2): key 3 types "4".
 //!
 //! Everything else falls through to the parent layer.
+//!
+//! LEDs: global default palette (layer keys blue, keys amber, media green,
+//! unbound off). L1 and its child L3 color keys teal; L2 and L4 pink.
+//! Key 12 has its own colors on L0 (red, yellow while held), which follow
+//! it onto every layer that inherits it.
 
+use macropad_engine::led::{Color, Rgb};
 use macropad_engine::{Action, Button, EncoderBinding, KeyBinding, KeyCode, Layer, LayerId, Modifiers};
+
+const TEAL: Color = Color::Rgb(Rgb::new(0, 255, 180));
+const PINK: Color = Color::Rgb(Rgb::new(255, 40, 140));
 
 const A: u8 = 0x04;
 const DIGIT_1: u8 = 0x1E;
@@ -42,14 +51,18 @@ pub fn layers() -> [Layer; 5] {
     l0.encoder_cw = EncoderBinding::Action(Action::Consumer(VOLUME_UP));
     l0.encoder_ccw = EncoderBinding::Action(Action::Consumer(VOLUME_DOWN));
     l0.set(Button::ENCODER, KeyBinding::Action(Action::Consumer(MUTE)));
+    l0.key_colors[key(12).index()].idle = Color::Rgb(Rgb::new(255, 0, 0));
+    l0.key_colors[key(12).index()].held = Color::Rgb(Rgb::new(255, 220, 0));
 
     let mut l1 = Layer::transparent(LayerId(0));
     l1.set(key(2), KeyBinding::Layer(LayerId(3))).set(key(3), digit(1));
     l1.encoder_cw = EncoderBinding::Action(tap(RIGHT));
     l1.encoder_ccw = EncoderBinding::Action(tap(LEFT));
+    l1.palette.key = TEAL;
 
     let mut l2 = Layer::transparent(LayerId(0));
     l2.set(key(1), KeyBinding::Layer(LayerId(4))).set(key(3), digit(2));
+    l2.palette.key = PINK;
 
     let mut l3 = Layer::transparent(LayerId(1));
     l3.set(key(3), digit(3));

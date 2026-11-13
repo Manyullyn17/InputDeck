@@ -9,10 +9,11 @@ pub mod config;
 pub mod engine;
 pub mod hid;
 pub mod label;
+pub mod led;
 
 #[cfg(test)]
 mod testutil;
 
 pub use config::*;
-pub use engine::{Engine, Event, Instant, Output};
+pub use engine::{Engine, Event, Instant, KeyLight, Output};
 pub use hid::{HidState, KeyboardReport};

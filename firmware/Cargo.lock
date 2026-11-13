@@ -656,6 +656,7 @@ dependencies = [
  "heapless 0.8.0",
  "macropad-engine",
  "panic-halt",
+ "smart-leds",
  "usbd-hid",
 ]
 

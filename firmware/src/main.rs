@@ -14,34 +14,71 @@ mod display;
 mod input;
 
 use embassy_executor::Spawner;
-use embassy_futures::join::join3;
+use embassy_futures::join::join4;
 use embassy_rp::gpio::{Input, Level, Output as Pin, Pull};
-use embassy_rp::peripherals::{DMA_CH0, USB};
-use embassy_rp::{bind_interrupts, dma, spi, usb};
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, PIO0, USB};
+use embassy_rp::pio::Pio;
+use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
+use embassy_rp::{bind_interrupts, dma, pio, spi, usb};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Ticker};
 use embassy_usb::Builder;
 use embassy_usb::class::hid::{self, HidBootProtocol, HidSubclass, HidWriter};
 use heapless::Vec;
-use macropad_engine::{BUTTON_COUNT, Config, Engine, Event, HidState, Instant, LayerId, Output};
+use macropad_engine::led::{self, Rgb};
+use macropad_engine::{BUTTON_COUNT, Config, Engine, Event, HidState, Instant, KEY_COUNT, LayerId, Output};
+use smart_leds::RGB8;
 use panic_halt as _;
 use usbd_hid::descriptor::{KeyboardReport, MediaKeyboardReport, SerializedDescriptor};
 
-use display::{Framebuffer, Sh1106, Snapshot};
+use display::{Framebuffer, Phase, Sh1106, Snapshot};
 use input::{Debouncer, Encoder};
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
+    PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
 });
 
-fn snapshot(engine: &Engine) -> Snapshot {
+/// Hard cap on estimated LED current, independent of config. USB 2.0 ports
+/// guarantee 500 mA for the whole device.
+const LED_MAX_MA: u32 = 300;
+/// OLED contrast when active and when dimmed.
+const CONTRAST_ACTIVE: u8 = 0x80;
+const CONTRAST_DIM: u8 = 0x08;
+
+fn phase(config: &Config, idle_ms: u64) -> Phase {
+    let after = |s: u16| s != 0 && idle_ms >= s as u64 * 1000;
+    if after(config.idle.off_after_s) {
+        Phase::Off
+    } else if after(config.idle.dim_after_s) {
+        Phase::Dim
+    } else {
+        Phase::Active
+    }
+}
+
+/// Final LED output: config colors, then brightness (reduced when dimmed),
+/// gamma, and the current cap.
+fn led_frame(config: &Config, engine: &Engine, phase: Phase) -> [RGB8; KEY_COUNT] {
+    let mut colors = led::key_colors(config, engine);
+    let brightness = match phase {
+        Phase::Active => config.leds.brightness,
+        Phase::Dim => config.leds.brightness / 4,
+        Phase::Off => 0,
+    };
+    led::apply_brightness(&mut colors, brightness);
+    led::limit_current(&mut colors, LED_MAX_MA);
+    colors.map(|Rgb { r, g, b }| RGB8 { r, g, b })
+}
+
+fn snapshot(engine: &Engine, phase: Phase) -> Snapshot {
     let mut held = [false; BUTTON_COUNT];
     for (i, h) in held.iter_mut().enumerate() {
         *h = engine.is_held(input::button(i));
     }
-    Snapshot { layer: engine.layer(), path: engine.layer_path().collect(), held }
+    Snapshot { phase, layer: engine.layer(), path: engine.layer_path().collect(), held }
 }
 
 #[embassy_executor::main]
@@ -129,22 +166,50 @@ async fn main(_spawner: Spawner) {
     let oled_reset = Pin::new(p.PIN_23, Level::High);
     let oled_dc = Pin::new(p.PIN_24, Level::Low);
 
+    // ---- Key LEDs (WS2812 on GPIO19) ----
+    let Pio { mut common, sm0, .. } = Pio::new(p.PIO0, Irqs);
+    let ws2812_program = PioWs2812Program::new(&mut common);
+    let mut key_leds = PioWs2812::new(&mut common, sm0, p.DMA_CH1, Irqs, p.PIN_19, &ws2812_program);
+
     let layers = demo::layers();
     let config = Config::new(&layers);
 
-    // Latest state for the display; newer snapshots overwrite unread ones.
+    // Latest state for display and LEDs; newer values overwrite unread ones.
     let screen: Signal<NoopRawMutex, Snapshot> = Signal::new();
+    let lights: Signal<NoopRawMutex, [RGB8; KEY_COUNT]> = Signal::new();
+
+    let led_loop = async {
+        key_leds.write(&led_frame(&config, &Engine::new(), Phase::Active)).await;
+        loop {
+            key_leds.write(&lights.wait().await).await;
+        }
+    };
 
     let display_loop = async {
         let mut oled = Sh1106::new(oled_spi, oled_dc, oled_cs, oled_reset).await;
         let mut fb = Framebuffer::new();
-        display::render(&mut fb, &config, &snapshot(&Engine::new()));
+        display::render(&mut fb, &config, &snapshot(&Engine::new(), Phase::Active));
         oled.flush(&fb).await;
+        oled.set_contrast(CONTRAST_ACTIVE).await;
         oled.on().await;
+        let mut shown = Phase::Active;
         loop {
             let snap = screen.wait().await;
-            display::render(&mut fb, &config, &snap);
-            oled.flush(&fb).await;
+            if snap.phase != Phase::Off {
+                display::render(&mut fb, &config, &snap);
+                oled.flush(&fb).await;
+            }
+            if snap.phase != shown {
+                match snap.phase {
+                    Phase::Active => oled.set_contrast(CONTRAST_ACTIVE).await,
+                    Phase::Dim => oled.set_contrast(CONTRAST_DIM).await,
+                    Phase::Off => oled.off().await,
+                }
+                if shown == Phase::Off {
+                    oled.on().await;
+                }
+                shown = snap.phase;
+            }
         }
     };
 
@@ -156,6 +221,8 @@ async fn main(_spawner: Spawner) {
         let mut sent_keyboard = [0u8; 8];
         let mut sent_media = 0u16;
         let mut ticker = Ticker::every(Duration::from_millis(1));
+        let mut last_activity = embassy_time::Instant::now();
+        let mut current_phase = Phase::Active;
 
         loop {
             ticker.next().await;
@@ -173,6 +240,15 @@ async fn main(_spawner: Spawner) {
             }
 
             let mut screen_dirty = false;
+            if !events.is_empty() {
+                last_activity = embassy_time::Instant::now();
+            }
+            // Any input wakes the device; the waking input is not swallowed.
+            let new_phase = phase(&config, last_activity.elapsed().as_millis());
+            if new_phase != current_phase {
+                current_phase = new_phase;
+                screen_dirty = true;
+            }
             for event in events {
                 screen_dirty |= matches!(event, Event::Press(_) | Event::Release(_));
                 let mut outputs: Vec<Output, 16> = Vec::new();
@@ -203,10 +279,11 @@ async fn main(_spawner: Spawner) {
                 }
             }
             if screen_dirty {
-                screen.signal(snapshot(&engine));
+                screen.signal(snapshot(&engine, current_phase));
+                lights.signal(led_frame(&config, &engine, current_phase));
             }
         }
     };
 
-    join3(usb.run(), input_loop, display_loop).await;
+    join4(usb.run(), input_loop, display_loop, led_loop).await;
 }

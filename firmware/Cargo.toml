@@ -16,6 +16,7 @@ embedded-graphics = "0.8.2"
 heapless = "0.8"
 macropad-engine = { version = "0.1.0", path = "../engine" }
 panic-halt = "1.0.0"
+smart-leds = "0.4"
 usbd-hid = "0.10.2"
 
 [workspace]
