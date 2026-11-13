@@ -14,6 +14,7 @@ pub mod hid;
 pub mod label;
 pub mod led;
 pub mod notation;
+pub mod protocol;
 
 #[cfg(test)]
 mod testutil;

@@ -1,8 +1,9 @@
 //! Macropad OS firmware for the Adafruit MacroPad RP2040.
 //!
-//! Bring-up stage: scans keys and encoder, runs the shared engine with a
-//! hard-coded demo config, sends USB HID keyboard and media reports, and
-//! shows the current layer and key bindings on the OLED.
+//! Scans keys and encoder, runs the shared engine with the config stored in
+//! flash (or a built-in demo if none is stored), sends USB HID keyboard and
+//! media reports, drives the OLED and key LEDs, and offers a USB serial
+//! port for config tools (`mpcfg`).
 //! The red LED is lit whenever a layer other than the base layer is active.
 //! Holding the knob plus keys 10 and 12 reboots into the UF2 bootloader.
 
@@ -14,9 +15,13 @@ extern crate alloc;
 mod demo;
 mod display;
 mod input;
+mod serial;
+mod storage;
 
 use embassy_executor::Spawner;
-use embassy_futures::join::join4;
+use embassy_futures::join::{join, join4};
+use embassy_rp::flash::Flash;
+use embassy_usb::class::cdc_acm::{self, CdcAcmClass};
 use embassy_rp::gpio::{Input, Level, Output as Pin, Pull};
 use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, PIO0, USB};
 use embassy_rp::pio::Pio;
@@ -102,6 +107,11 @@ async fn main(_spawner: Spawner) {
     usb_config.manufacturer = Some("Macropad OS");
     usb_config.product = Some("Macropad OS");
     usb_config.max_power = 100;
+    // Composite device (HID + CDC serial) needs interface association.
+    usb_config.composite_with_iads = true;
+    usb_config.device_class = 0xEF;
+    usb_config.device_sub_class = 0x02;
+    usb_config.device_protocol = 0x01;
 
     let mut config_descriptor = [0; 256];
     let mut bos_descriptor = [0; 256];
@@ -109,6 +119,7 @@ async fn main(_spawner: Spawner) {
     // Declared before the builder so they outlive it.
     let mut keyboard_state = hid::State::new();
     let mut media_state = hid::State::new();
+    let mut serial_state = cdc_acm::State::new();
     let mut builder = Builder::new(
         driver,
         usb_config,
@@ -143,6 +154,8 @@ async fn main(_spawner: Spawner) {
             hid_boot_protocol: HidBootProtocol::None,
         },
     );
+
+    let mut serial_port = CdcAcmClass::new(&mut builder, &mut serial_state, 64);
 
     let mut usb = builder.build();
 
@@ -181,7 +194,11 @@ async fn main(_spawner: Spawner) {
     let ws2812_program = PioWs2812Program::new(&mut common);
     let mut key_leds = PioWs2812::new(&mut common, sm0, p.DMA_CH1, Irqs, p.PIN_19, &ws2812_program);
 
-    let config = Config::new(demo::layers().into());
+    // ---- Config ----
+    let mut store = storage::Storage::new(Flash::new_blocking(p.FLASH));
+    let config = store.load().unwrap_or_else(|| Config::new(demo::layers().into()));
+
+    let serial_loop = serial::run(&mut serial_port, &mut store);
 
     // Latest state for display and LEDs; newer values overwrite unread ones.
     let screen: Signal<NoopRawMutex, Snapshot> = Signal::new();
@@ -294,5 +311,5 @@ async fn main(_spawner: Spawner) {
         }
     };
 
-    join4(usb.run(), input_loop, display_loop, led_loop).await;
+    join(join4(usb.run(), input_loop, display_loop, led_loop), serial_loop).await;
 }

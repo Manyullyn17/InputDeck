@@ -5,6 +5,15 @@ set -eu
 export PATH="$HOME/.cargo/bin:$PATH"
 
 dev=/dev/disk/by-label/RPI-RP2
+here=$(cd "$(dirname "$0")" && pwd)
+
+# If Macropad OS firmware is running, ask it to enter the bootloader.
+if [ ! -e "$dev" ]; then
+    if (cd "$here/.." && cargo run -q -p mpcfg -- bootloader) 2>/dev/null; then
+        :
+    fi
+fi
+
 tries=0
 while [ ! -e "$dev" ]; do
     if [ "$tries" -eq 0 ]; then
