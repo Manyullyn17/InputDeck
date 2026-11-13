@@ -13,6 +13,9 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::toml_config::{self, BASE, NO_PARENT};
 
+mod settings;
+pub use settings::{CATEGORIES, KeyColors, PaletteEntry, SLOTS, SettingValue, SettingsView};
+
 /// Index of the encoder button in key lists (after the 12 keys).
 pub const ENCODER_PRESS: usize = KEY_COUNT;
 
@@ -26,6 +29,7 @@ pub struct DocumentView {
     pub name: String,
     pub layers: Vec<LayerView>,
     pub macros: Vec<MacroView>,
+    pub settings: SettingsView,
     /// Compile error of the current document, if any.
     pub error: Option<String>,
 }
@@ -39,6 +43,8 @@ pub struct LayerView {
     pub keys: Vec<KeyView>,
     pub encoder_cw: String,
     pub encoder_ccw: String,
+    /// Category colors set on this layer, and what they inherit.
+    pub palette: Vec<PaletteEntry>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -51,6 +57,8 @@ pub struct KeyView {
     pub category: &'static str,
     /// Idle LED color (full level), "#rrggbb".
     pub color: String,
+    /// Per-key colors as written in the file.
+    pub colors: KeyColors,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -426,7 +434,8 @@ impl ConfigDocument {
                             None => (String::new(), "unbound", hex(Rgb::BLACK)),
                         };
                         let inherited = raw == "_";
-                        KeyView { raw, label, inherited, category, color }
+                        let colors = if k == ENCODER_PRESS { KeyColors::default() } else { self.key_colors_raw(id, k) };
+                        KeyView { raw, label, inherited, category, color, colors }
                     })
                     .collect();
                 LayerView {
@@ -446,6 +455,7 @@ impl ConfigDocument {
                     keys,
                     encoder_cw: self.raw_encoder(id, "cw"),
                     encoder_ccw: self.raw_encoder(id, "ccw"),
+                    palette: self.layer_palette(id, i),
                 }
             })
             .collect::<Vec<LayerView>>();
@@ -458,6 +468,7 @@ impl ConfigDocument {
             name: self.doc.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             layers,
             macros,
+            settings: self.settings_view(),
             error: self.compiled.as_ref().err().cloned(),
         }
     }

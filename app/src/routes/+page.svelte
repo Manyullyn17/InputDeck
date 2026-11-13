@@ -1,8 +1,21 @@
 <script lang="ts">
   import { open, save } from "@tauri-apps/plugin-dialog";
   import { tick } from "svelte";
-  import { api, makeId, message, ENCODER_PRESS, type LayerView, type MacroEdit, type MacroView, type View } from "$lib/api";
+  import {
+    api,
+    makeId,
+    message,
+    CATEGORY_LABELS,
+    ENCODER_PRESS,
+    type ColorSlot,
+    type LayerView,
+    type MacroEdit,
+    type MacroView,
+    type View,
+  } from "$lib/api";
   import BindingEditor from "$lib/BindingEditor.svelte";
+  import ColorField from "$lib/ColorField.svelte";
+  import ProfileSettings from "$lib/ProfileSettings.svelte";
   import DevicePanel from "$lib/DevicePanel.svelte";
   import KeyGrid from "$lib/KeyGrid.svelte";
   import MacroEditor from "$lib/MacroEditor.svelte";
@@ -19,6 +32,8 @@
   let newMacroName = $state("");
   /** The macro being edited; null shows the selected layer. */
   let macroId = $state<string | null>(null);
+  /** Show the profile settings in the center instead of a layer/macro. */
+  let settingsOpen = $state(false);
   let simulator = $state<ReturnType<typeof Simulator>>();
 
   const doc = $derived(view.doc);
@@ -110,6 +125,23 @@
     newMacroName = "";
   }
 
+  const heldStyle = $derived(doc?.settings.held_style ?? doc?.settings.defaults.held_style ?? "brighten");
+  const COLOR_SLOTS: { slot: ColorSlot; label: string; unset: string; help: string }[] = [
+    { slot: "idle", label: "Normal", unset: "Layer color", help: "The key's color. Unset: the color for its key type on this layer." },
+    { slot: "held", label: "While pressed", unset: "Auto", help: "Unset: the normal color, brightened / white / inverted (see Profile settings)." },
+    { slot: "active", label: "While on", unset: "Auto", help: "While a toggle, latch, repeat or toggle macro on this key is on." },
+  ];
+
+  function setKeyColor(slot: ColorSlot, color: string | null) {
+    if (layer && typeof target === "number" && target < 12) report(api.setKeyColor(layer.id, target, slot, color));
+  }
+
+  function selectLayer(id: string) {
+    layerId = id;
+    macroId = null;
+    settingsOpen = false;
+  }
+
   function applyMacro(settings: MacroEdit): Promise<string | null> {
     return macroId ? call(api.setMacro(macroId, settings)) : Promise.resolve(null);
   }
@@ -184,18 +216,16 @@
   {:else}
     <main>
       <aside class="layers">
-        <h2>Layers</h2>
+        <button class="layer settings-btn" class:on={settingsOpen} onclick={() => (settingsOpen = true)}>⚙ Profile settings</button>
+        <h2 class="section">Layers</h2>
         <ul>
           {#each tree as { layer: l, depth }}
             <li>
               <button
                 class="layer"
-                class:on={!macro && l.id === layer?.id}
+                class:on={!macro && !settingsOpen && l.id === layer?.id}
                 style:padding-left="{10 + depth * 16}px"
-                onclick={() => {
-                  layerId = l.id;
-                  macroId = null;
-                }}
+                onclick={() => selectLayer(l.id)}
               >
                 {l.name || l.id}<span class="muted mono"> {l.name ? l.id : ""}</span>
               </button>
@@ -211,7 +241,14 @@
         <ul>
           {#each doc.macros as m}
             <li>
-              <button class="layer" class:on={m.id === macroId} onclick={() => (macroId = m.id)}>
+              <button
+                class="layer"
+                class:on={!settingsOpen && m.id === macroId}
+                onclick={() => {
+                  macroId = m.id;
+                  settingsOpen = false;
+                }}
+              >
                 {m.name || m.id}<span class="muted mono"> {m.name ? m.id : ""}</span>
                 {#if !m.used_by.length}<span class="muted" title="Not bound to any key"> ·</span>{/if}
               </button>
@@ -226,7 +263,15 @@
       </aside>
 
       <section class="center">
-        {#if macro}
+        {#if settingsOpen}
+          <div class="panel">
+            <ProfileSettings
+              settings={doc.settings}
+              onset={(path, value) => report(api.setSetting(path, value))}
+              onpalette={(category, color) => report(api.setPalette(null, category, color))}
+            />
+          </div>
+        {:else if macro}
           <div class="panel">
             <MacroEditor
               {macro}
@@ -269,8 +314,45 @@
                 actionsOnly={target === "cw" || target === "ccw"}
                 onapply={applyBinding}
               />
+              {#if typeof target === "number" && target < 12}
+                {@const key = layer.keys[target]}
+                <h3 class="sub">Key color</h3>
+                <div class="color-list">
+                  {#each COLOR_SLOTS as s}
+                    <ColorField
+                      label={s.label}
+                      value={key.colors[s.slot]}
+                      inherited={s.slot === "idle" ? key.color : ""}
+                      unsetLabel={s.unset}
+                      help={s.help}
+                      onchange={(c) => setKeyColor(s.slot, c)}
+                    />
+                  {/each}
+                </div>
+                <p class="help">
+                  Pressed keys {heldStyle === "white" ? "turn white" : heldStyle === "invert" ? "invert their color" : "brighten"} unless "While
+                  pressed" is set. "While on" applies to toggles, latches, repeats and toggle macros.
+                </p>
+              {/if}
             </div>
           {/if}
+
+          <details class="panel">
+            <summary>Layer colors <span class="muted">— colors by key type on {layer.name || layer.id}</span></summary>
+            <p class="help">
+              Unset colors come from {layer.parent && layer.parent !== "none" ? "the layer this one falls back to" : "the profile settings"}.
+            </p>
+            <div class="color-grid">
+              {#each layer.palette as entry}
+                <ColorField
+                  label={CATEGORY_LABELS[entry.category]}
+                  value={entry.raw}
+                  inherited={entry.inherited}
+                  onchange={(c) => report(api.setPalette(layer.id, entry.category, c))}
+                />
+              {/each}
+            </div>
+          </details>
         {/if}
       </section>
 
@@ -387,6 +469,36 @@
   }
   .section {
     margin-top: 18px;
+  }
+  .settings-btn {
+    margin-bottom: 4px;
+  }
+  .sub {
+    margin: 18px 0 8px;
+    font-size: 14px;
+  }
+  .color-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .color-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 18px;
+    margin-top: 10px;
+  }
+  .help {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  summary .muted {
+    font-weight: 400;
   }
   .small {
     font-size: 12px;

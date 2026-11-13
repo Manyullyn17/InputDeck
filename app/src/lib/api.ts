@@ -1,13 +1,66 @@
 // Typed wrappers around the Rust backend (src-tauri/src/lib.rs).
 import { invoke } from "@tauri-apps/api/core";
 
+export interface KeyColors {
+  idle: string | null;
+  held: string | null;
+  active: string | null;
+}
+export type ColorSlot = keyof KeyColors;
+
 export interface KeyView {
   raw: string;
   label: string;
   inherited: boolean;
   category: "layer" | "key" | "modified" | "media" | "macro" | "unbound";
+  /** Effective idle color, "#rrggbb". */
   color: string;
+  /** Per-key colors as written in the file. */
+  colors: KeyColors;
 }
+
+export type Category = "layer_key" | "key" | "modified" | "media" | "macro" | "unbound";
+
+export const CATEGORY_LABELS: Record<Category, string> = {
+  layer_key: "Layer keys",
+  key: "Keys",
+  modified: "Keys with modifiers",
+  media: "Media keys",
+  macro: "Macros & system",
+  unbound: "Unbound keys",
+};
+
+export interface PaletteEntry {
+  category: Category;
+  /** Set here (null = not set). */
+  raw: string | null;
+  /** What applies when not set: "#rrggbb" or "off". */
+  inherited: string;
+}
+
+export interface SettingsView {
+  name: string;
+  leds_enabled: boolean | null;
+  brightness: number | null;
+  idle_level: number | null;
+  held_style: string | null;
+  dim_after: number | null;
+  off_after: number | null;
+  tap: number | null;
+  char_delay: number | null;
+  palette: PaletteEntry[];
+  defaults: {
+    brightness: number;
+    idle_level: number;
+    held_style: string;
+    dim_after: number;
+    off_after: number;
+    tap: number;
+    char_delay: number;
+  };
+}
+
+export type SettingValue = boolean | number | string | null;
 
 export interface LayerView {
   id: string;
@@ -17,6 +70,7 @@ export interface LayerView {
   keys: KeyView[];
   encoder_cw: string;
   encoder_ccw: string;
+  palette: PaletteEntry[];
 }
 
 export type MacroKind = "once" | "while_held" | "toggle";
@@ -43,6 +97,7 @@ export interface DocumentView {
   name: string;
   layers: LayerView[];
   macros: MacroView[];
+  settings: SettingsView;
   error: string | null;
 }
 
@@ -90,6 +145,12 @@ export const api = {
   addMacro: (id: string, name: string) => invoke<View>("add_macro", { id, name }),
   removeMacro: (id: string) => invoke<View>("remove_macro", { id }),
   setMacro: (id: string, settings: MacroEdit) => invoke<View>("set_macro", { id, settings }),
+
+  setKeyColor: (layer: string, index: number, slot: ColorSlot, color: string | null) =>
+    invoke<View>("set_key_color", { layer, index, slot, color }),
+  setPalette: (layer: string | null, category: Category, color: string | null) =>
+    invoke<View>("set_palette", { layer, category, color }),
+  setSetting: (path: string, value: SettingValue) => invoke<View>("set_setting", { path, value }),
 
   simState: () => invoke<SimState>("sim_state"),
   simReset: () => invoke<SimState>("sim_reset"),

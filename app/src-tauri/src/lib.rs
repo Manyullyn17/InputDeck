@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use macropad_engine::Config;
 use macropad_engine::codec::{self, Bundle, FORMAT_VERSION};
 use mpcfg::device::Device;
-use mpcfg::document::{ConfigDocument, DocumentView, MacroEdit};
+use mpcfg::document::{ConfigDocument, DocumentView, MacroEdit, SettingValue};
 use mpcfg::sim::{SimState, Simulator};
 use mpcfg::to_toml;
 use serde::Serialize;
@@ -154,6 +154,21 @@ fn remove_macro(state: Shared, id: String) -> CmdResult<View> {
 #[tauri::command]
 fn set_macro(state: Shared, id: String, settings: MacroEdit) -> CmdResult<View> {
     edit(&state, |d| d.set_macro(&id, &settings))
+}
+
+#[tauri::command]
+fn set_key_color(state: Shared, layer: String, index: usize, slot: String, color: Option<String>) -> CmdResult<View> {
+    edit(&state, |d| d.set_key_color(&layer, index, &slot, color.as_deref()))
+}
+
+#[tauri::command]
+fn set_palette(state: Shared, layer: Option<String>, category: String, color: Option<String>) -> CmdResult<View> {
+    edit(&state, |d| d.set_palette(layer.as_deref(), &category, color.as_deref()))
+}
+
+#[tauri::command]
+fn set_setting(state: Shared, path: String, value: Option<SettingValue>) -> CmdResult<View> {
+    edit(&state, |d| d.set_setting(&path, value))
 }
 
 // ---- Simulator ----
@@ -355,6 +370,9 @@ pub fn run() {
             add_macro,
             remove_macro,
             set_macro,
+            set_key_color,
+            set_palette,
+            set_setting,
             sim_state,
             sim_run_macro,
             sim_reset,
