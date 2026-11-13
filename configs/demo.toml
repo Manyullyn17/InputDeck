@@ -11,12 +11,21 @@
 #   latch:<action>    hold the action down until pressed again
 #   repeat:<action>@<ms>  tap the action every <ms> until pressed again (default 100)
 #   macro:<id>        run a macro (see [macros] at the bottom)
+#   settings          open the onboard settings menu
+#   profile:next, profile:prev   switch between uploaded profiles
+#   bootloader        reboot into the firmware bootloader
 #   a, 7, f5, enter, esc, space, tab, backspace, up, left, home, pgup, -, [, ...
 #   ctrl+c, shift+alt+t, gui+space, rctrl+x   keys with modifiers
 #   vol+, vol-, mute, play, next, prev, stop  media keys
 #   0x2c, media:0xb5  raw HID usages
 #
 # Colors: "#rrggbb", "off", or "_" (inherit).
+#
+# Several files can be uploaded as profiles:
+#   cargo run -p mpcfg -- upload configs/demo.toml configs/numpad.toml
+
+# Profile name, shown when switching profiles.
+name = "Demo"
 
 # The computer's keyboard layout, used to type text in macros:
 #   "us", "de"        built in
@@ -112,7 +121,7 @@ name = "Tools"
 keys = [
   "macro:hello",  "macro:ticker",       "latch:shift",
   "repeat:b@250", "macro:word_skip",    "macro:shout",
-  "_",            "_",                  "_",
+  "settings",     "_",                  "profile:next",
   "_",            "_",                  "_",
 ]
 encoder = { cw = "vol+", ccw = "vol-" }

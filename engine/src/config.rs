@@ -93,6 +93,18 @@ pub enum KeyBinding {
     Toggle(Toggle),
     /// Run a macro from [`Config::macros`].
     Macro(MacroId),
+    /// A device function (settings menu, profile switching, ...).
+    System(SystemAction),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SystemAction {
+    /// Open the onboard settings menu.
+    Settings,
+    NextProfile,
+    PrevProfile,
+    /// Reboot into the UF2 bootloader.
+    Bootloader,
 }
 
 impl KeyBinding {
@@ -103,6 +115,7 @@ impl KeyBinding {
             self,
             KeyBinding::Action(_)
                 | KeyBinding::Macro(_)
+                | KeyBinding::System(_)
                 | KeyBinding::Toggle(Toggle::Latch(_) | Toggle::Repeat { .. })
         )
     }
@@ -245,6 +258,8 @@ impl Layer {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
+    /// Profile name (shown when switching profiles). Empty means "Profile <n>".
+    pub name: String,
     pub layers: Vec<Layer>,
     /// Layer-independent buttons: if set, the action applies on every layer
     /// whose own binding for the button is [`KeyBinding::Inherit`]. Any
@@ -345,6 +360,7 @@ pub enum ConfigError {
 impl Config {
     pub fn new(layers: Vec<Layer>) -> Self {
         Config {
+            name: String::new(),
             layers,
             global: [None; BUTTON_COUNT],
             leds: LedSettings::DEFAULT,

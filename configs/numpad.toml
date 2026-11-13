@@ -1,0 +1,16 @@
+# A second, minimal profile: a number pad. The knob button switches back
+# to the next profile.
+name = "Numpad"
+
+[leds]
+palette = { key = "#00a0ff" }
+
+[layers.base]
+name = "Numpad"
+keys = [
+  "7", "8", "9",
+  "4", "5", "6",
+  "1", "2", "3",
+  "0", ".", "enter",
+]
+encoder = { cw = "vol+", ccw = "vol-", press = "profile:next" }

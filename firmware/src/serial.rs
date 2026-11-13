@@ -2,6 +2,7 @@
 
 use alloc::format;
 use alloc::vec::Vec;
+use core::cell::RefCell;
 
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::Driver;
@@ -26,7 +27,7 @@ enum After {
 /// input loop through `new_config` to take effect immediately.
 pub async fn run<'d>(
     class: &mut CdcAcmClass<'d, Driver<'d, USB>>,
-    storage: &mut Storage,
+    storage: &RefCell<Storage>,
     new_config: &Signal<NoopRawMutex, Config>,
 ) -> ! {
     loop {
@@ -60,7 +61,7 @@ pub async fn run<'d>(
     }
 }
 
-fn handle(kind: u8, payload: &[u8], storage: &mut Storage) -> (u8, Vec<u8>, After) {
+fn handle(kind: u8, payload: &[u8], storage: &RefCell<Storage>) -> (u8, Vec<u8>, After) {
     match kind {
         CMD_PING => {
             let mut info = Vec::from(PING_MAGIC);
@@ -74,13 +75,13 @@ fn handle(kind: u8, payload: &[u8], storage: &mut Storage) -> (u8, Vec<u8>, Afte
                 Ok(None) => return (STATUS_BAD_CONFIG, b"no active profile".to_vec(), After::Nothing),
                 Err(e) => return (STATUS_BAD_CONFIG, format!("{e:?}").into_bytes(), After::Nothing),
             };
-            match storage.save(payload) {
+            match storage.borrow_mut().save(payload) {
                 Ok(()) => (STATUS_OK, Vec::new(), After::Apply(config)),
                 Err(StoreError::TooLarge) => (STATUS_TOO_LARGE, Vec::new(), After::Nothing),
                 Err(e) => (STATUS_STORAGE_ERROR, format!("{e:?}").into_bytes(), After::Nothing),
             }
         }
-        CMD_GET_CONFIG => match storage.read_active() {
+        CMD_GET_CONFIG => match storage.borrow_mut().read_active() {
             Some(bytes) => (STATUS_OK, bytes, After::Nothing),
             None => (STATUS_NO_CONFIG, Vec::new(), After::Nothing),
         },

@@ -103,7 +103,7 @@ impl HidState {
                 adjust(&mut self.typed_mod_counts, mods, false);
                 self.typed_down = self.typed_down.saturating_sub(1);
             }
-            Output::LayerChanged(_) => {}
+            Output::LayerChanged(_) | Output::System(_) => {}
         }
     }
 

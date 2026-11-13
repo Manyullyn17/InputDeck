@@ -37,12 +37,23 @@ enum Command {
     },
     /// Show the connected device's versions and stored config.
     Info,
-    /// Upload a config (.toml, or an encoded .bin). The device applies it right away.
-    Upload { file: PathBuf },
-    /// Download the device's stored config (.toml output is readable, anything else is binary).
+    /// Upload one or more configs (.toml) as profiles. The device applies
+    /// the active one right away. A single encoded .bin is uploaded as is.
+    Upload {
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+        /// Index of the profile to activate (default: the first).
+        #[arg(long, default_value_t = 0)]
+        active: u8,
+    },
+    /// Download a stored profile (.toml output is readable; anything else
+    /// gets the whole binary bundle).
     Pull {
         #[arg(short, long)]
         output: PathBuf,
+        /// Profile index (default: the active one).
+        #[arg(long)]
+        profile: Option<u8>,
     },
     /// Reboot the device into its UF2 bootloader for flashing firmware.
     Bootloader,
@@ -53,15 +64,23 @@ fn load(path: &Path) -> Result<Config> {
     toml_config::parse(&text).with_context(|| format!("in {}", path.display()))
 }
 
-/// A config file as encoded bytes: TOML is compiled, anything else is
-/// treated as already encoded and checked.
-fn load_encoded(path: &Path) -> Result<Vec<u8>> {
-    if path.extension().is_some_and(|e| e == "toml") {
-        return Ok(codec::encode(&Bundle::single(load(path)?)));
+/// Config files as one encoded bundle: TOML files become profiles in the
+/// given order; a single other file is treated as an already encoded bundle.
+fn load_encoded(paths: &[PathBuf], active: u8) -> Result<Vec<u8>> {
+    if let [path] = paths
+        && !path.extension().is_some_and(|e| e == "toml")
+    {
+        let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+        codec::decode(&bytes).map_err(|e| anyhow::anyhow!("{}: not a valid encoded config: {e:?}", path.display()))?;
+        return Ok(bytes);
     }
-    let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    codec::decode(&bytes).map_err(|e| anyhow::anyhow!("{}: not a valid encoded config: {e:?}", path.display()))?;
-    Ok(bytes)
+    ensure!((active as usize) < paths.len(), "--active {active} but only {} profile(s) given", paths.len());
+    let profiles = paths.iter().map(|p| load(p)).collect::<Result<Vec<_>>>()?;
+    Ok(codec::encode(&Bundle { active, profiles }))
+}
+
+fn profile_label(config: &Config, i: usize) -> String {
+    if config.name.is_empty() { format!("Profile {}", i + 1) } else { config.name.clone() }
 }
 
 fn summary(config: &Config) {
@@ -95,15 +114,20 @@ fn main() -> Result<()> {
             match dev.get_config() {
                 Ok(bytes) => {
                     let bundle = codec::decode(&bytes).map_err(|e| anyhow::anyhow!("stored config: {e:?}"))?;
-                    let config = bundle.active_config().expect("decode checks the active profile");
-                    println!("stored config: {} bytes, {} layers", bytes.len(), config.layers.len());
-                    summary(config);
+                    println!("stored config: {} bytes, {} profile(s)", bytes.len(), bundle.profiles.len());
+                    for (i, config) in bundle.profiles.iter().enumerate() {
+                        let marker = if i == bundle.active as usize { "*" } else { " " };
+                        println!("{marker} {i}: {} ({} layers)", profile_label(config, i), config.layers.len());
+                        if i == bundle.active as usize {
+                            summary(config);
+                        }
+                    }
                 }
                 Err(e) => println!("{e}"),
             }
         }
-        Command::Upload { file } => {
-            let bytes = load_encoded(&file)?;
+        Command::Upload { files, active } => {
+            let bytes = load_encoded(&files, active)?;
             let mut dev = Device::open(port)?;
             let info = dev.info()?;
             ensure!(
@@ -114,11 +138,15 @@ fn main() -> Result<()> {
             dev.put_config(&bytes)?;
             println!("uploaded {} bytes; the device is using the new config", bytes.len());
         }
-        Command::Pull { output } => {
+        Command::Pull { output, profile } => {
             let bytes = Device::open(port)?.get_config()?;
             if output.extension().is_some_and(|e| e == "toml") {
                 let bundle = codec::decode(&bytes).map_err(|e| anyhow::anyhow!("stored config: {e:?}"))?;
-                let config = bundle.active_config().expect("decode checks the active profile");
+                let index = profile.unwrap_or(bundle.active) as usize;
+                let config = bundle
+                    .profiles
+                    .get(index)
+                    .ok_or_else(|| anyhow::anyhow!("no profile {index} (the device has {})", bundle.profiles.len()))?;
                 fs::write(&output, to_toml::write(config)).with_context(|| format!("writing {}", output.display()))?;
                 println!("wrote {}", output.display());
             } else {

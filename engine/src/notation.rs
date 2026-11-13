@@ -9,6 +9,7 @@
 //! | `latch:<action>` | hold `<action>` down until pressed again |
 //! | `repeat:<action>` / `repeat:<action>@<ms>` | tap `<action>` repeatedly (default every 100 ms) until pressed again |
 //! | `macro:<id>` | run macro `<id>` |
+//! | `settings`, `profile:next`, `profile:prev`, `bootloader` | device functions |
 //! | `a`, `7`, `f5`, `enter`, `left`, `-`, ... | a key |
 //! | `ctrl+shift+t`, `rctrl+c`, `gui+space` | a key with modifiers |
 //! | `0x2c`, `ctrl+0x2c` | a raw HID keyboard usage |
@@ -24,7 +25,16 @@
 use alloc::string::String;
 use core::fmt::{self, Write};
 
-use crate::config::{Action, EncoderBinding, KeyBinding, KeyCode, LayerId, MacroId, Modifiers, Step, Toggle};
+use crate::config::{
+    Action, EncoderBinding, KeyBinding, KeyCode, LayerId, MacroId, Modifiers, Step, SystemAction, Toggle,
+};
+
+const SYSTEM: &[(&str, SystemAction)] = &[
+    ("settings", SystemAction::Settings),
+    ("profile:next", SystemAction::NextProfile),
+    ("profile:prev", SystemAction::PrevProfile),
+    ("bootloader", SystemAction::Bootloader),
+];
 use crate::led::{Color, Rgb};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -217,10 +227,14 @@ pub fn parse_binding(
     macro_: impl Fn(&str) -> Option<MacroId>,
 ) -> Result<KeyBinding, ParseError> {
     let t = text.trim();
-    match lower(t).as_str() {
+    let l = lower(t);
+    match l.as_str() {
         "_" => return Ok(KeyBinding::Inherit),
         "" | "none" => return Ok(KeyBinding::None),
         _ => {}
+    }
+    if let Some(&(_, action)) = SYSTEM.iter().find(|(name, _)| *name == l) {
+        return Ok(KeyBinding::System(action));
     }
     if let Some(id) = t.strip_prefix("layer:") {
         return layer(id.trim()).map(KeyBinding::Layer).ok_or(ParseError::UnknownLayer);
@@ -365,6 +379,10 @@ pub fn write_binding<W: Write>(
             w.write_str("macro:")?;
             macro_(w, id)
         }
+        KeyBinding::System(action) => {
+            let (name, _) = SYSTEM.iter().find(|(_, a)| *a == action).unwrap();
+            w.write_str(name)
+        }
         KeyBinding::Action(a) => write_action(w, a),
     }
 }
@@ -450,6 +468,8 @@ mod tests {
         assert_eq!(binding("repeat:a@1"), Err(ParseError::BadNumber));
         assert_eq!(binding("macro:hello"), Ok(KeyBinding::Macro(MacroId(0))));
         assert_eq!(binding("macro:nope"), Err(ParseError::UnknownMacro));
+        assert_eq!(binding("Settings"), Ok(KeyBinding::System(SystemAction::Settings)));
+        assert_eq!(binding("profile:next"), Ok(KeyBinding::System(SystemAction::NextProfile)));
     }
 
     #[test]

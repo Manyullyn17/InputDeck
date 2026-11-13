@@ -53,6 +53,8 @@ pub enum Output {
     TypeRelease { code: KeyCode, mods: Modifiers },
     /// The current layer changed.
     LayerChanged(LayerId),
+    /// A system binding was pressed; the firmware carries it out.
+    System(SystemAction),
 }
 
 /// What a held button is doing, fixed at the moment it was pressed. The
@@ -284,6 +286,10 @@ impl Engine {
                 Held::Consumed(layer)
             }
             KeyBinding::Macro(id) => self.press_macro(config, id, button, layer, now, out),
+            KeyBinding::System(action) => {
+                out(Output::System(action));
+                Held::Consumed(layer)
+            }
             KeyBinding::None | KeyBinding::Inherit => Held::Nothing,
         };
     }
@@ -1022,6 +1028,13 @@ mod tests {
         h.press(5);
         let outs = h.run_until(11);
         assert!(outs.contains(&Press(act(0x05))) && outs.contains(&Press(act(0x06))));
+    }
+
+    #[test]
+    fn system_bindings_are_reported_once() {
+        let mut h = with_binding(4, KeyBinding::System(SystemAction::Settings));
+        assert_eq!(h.press(4), [Output::System(SystemAction::Settings)]);
+        assert_eq!(h.release(4), []);
     }
 
     #[test]

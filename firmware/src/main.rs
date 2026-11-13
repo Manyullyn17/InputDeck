@@ -5,7 +5,10 @@
 //! media reports, drives the OLED and key LEDs, and offers a USB serial
 //! port for config tools (`mpcfg`). Uploaded configs apply immediately.
 //! The red LED is lit whenever a layer other than the base layer is active.
-//! Holding the knob plus keys 10 and 12 reboots into the UF2 bootloader.
+//!
+//! Hard-wired combos (independent of the config):
+//! - knob + keys 1 and 3 (top corners): settings menu
+//! - knob + keys 10 and 12 (bottom corners): reboot into the UF2 bootloader
 
 #![no_std]
 #![no_main]
@@ -18,6 +21,7 @@ mod input;
 mod keyboard;
 mod serial;
 mod storage;
+mod ui;
 
 use embassy_executor::Spawner;
 use embassy_futures::join::{join, join4};
@@ -37,15 +41,18 @@ use heapless::Vec;
 use macropad_engine::led::{self, Rgb};
 use core::cell::RefCell;
 
+use alloc::string::String;
+use macropad_engine::menu::{Menu, MenuInput, MenuOutcome};
 use macropad_engine::{
-    BUTTON_COUNT, Config, Engine, Event, HidState, HostLed, Instant, KEY_COUNT, KeyLight, LayerId, NKRO_REPORT_LEN,
-    Output,
+    BUTTON_COUNT, Button, Config, Engine, Event, HidState, HostLed, Instant, KEY_COUNT, KeyLight, LayerId,
+    NKRO_REPORT_LEN, Output, SystemAction,
 };
 use smart_leds::RGB8;
 use panic_halt as _;
 use usbd_hid::descriptor::{MediaKeyboardReport, SerializedDescriptor};
 
-use display::{Framebuffer, Phase, Sh1106, Snapshot};
+use display::{Framebuffer, Phase, Screen, Sh1106, Snapshot};
+use ui::MenuScreen;
 use input::{Debouncer, Encoder};
 
 #[global_allocator]
@@ -64,6 +71,14 @@ const LED_MAX_MA: u32 = 300;
 /// OLED contrast when active and when dimmed.
 const CONTRAST_ACTIVE: u8 = 0x80;
 const CONTRAST_DIM: u8 = 0x08;
+/// How long a notice (profile name, "Saved") replaces the layer path.
+const NOTICE_MS: u64 = 1500;
+
+const KNOB: usize = 12;
+/// Knob + keys 1 and 3: settings menu.
+const SETTINGS_COMBO: [usize; 3] = [KNOB, 0, 2];
+/// Knob + keys 10 and 12: bootloader.
+const BOOTLOADER_COMBO: [usize; 3] = [KNOB, 9, 11];
 
 fn phase(config: &Config, idle_ms: u64) -> Phase {
     let after = |s: u16| s != 0 && idle_ms >= s as u64 * 1000;
@@ -90,7 +105,7 @@ fn led_frame(config: &Config, engine: &Engine, phase: Phase) -> [RGB8; KEY_COUNT
     colors.map(|Rgb { r, g, b }| RGB8 { r, g, b })
 }
 
-fn snapshot(engine: &Engine, phase: Phase) -> Snapshot {
+fn snapshot(engine: &Engine, phase: Phase, notice: Option<String>) -> Snapshot {
     // Highlighted on the OLED: held, toggled on, or running a macro.
     let mut held = [false; BUTTON_COUNT];
     for (i, h) in held.iter_mut().enumerate() {
@@ -100,7 +115,7 @@ fn snapshot(engine: &Engine, phase: Phase) -> Snapshot {
         );
     }
     let caps_lock = HostLed::CapsLock.is_on(keyboard::host_leds());
-    Snapshot { phase, layer: engine.layer(), path: engine.layer_path().collect(), held, caps_lock }
+    Snapshot { phase, layer: engine.layer(), path: engine.layer_path().collect(), held, caps_lock, notice }
 }
 
 #[embassy_executor::main]
@@ -207,16 +222,18 @@ async fn main(_spawner: Spawner) {
     let mut key_leds = PioWs2812::new(&mut common, sm0, p.DMA_CH1, Irqs, p.PIN_19, &ws2812_program);
 
     // ---- Config ----
-    let mut store = storage::Storage::new(Flash::new_blocking(p.FLASH));
+    let mut flash_store = storage::Storage::new(Flash::new_blocking(p.FLASH));
+    let initial = flash_store.load().unwrap_or_else(|| Config::new(demo::layers().into()));
     // Shared by all loops. Borrows are never held across an await; uploads
     // arrive through `new_config` and are swapped in by the input loop.
-    let config = RefCell::new(store.load().unwrap_or_else(|| Config::new(demo::layers().into())));
+    let store = RefCell::new(flash_store);
+    let config = RefCell::new(initial);
     let new_config: Signal<NoopRawMutex, Config> = Signal::new();
 
-    let serial_loop = serial::run(&mut serial_port, &mut store, &new_config);
+    let serial_loop = serial::run(&mut serial_port, &store, &new_config);
 
     // Latest state for display and LEDs; newer values overwrite unread ones.
-    let screen: Signal<NoopRawMutex, Snapshot> = Signal::new();
+    let screen: Signal<NoopRawMutex, Screen> = Signal::new();
     let lights: Signal<NoopRawMutex, [RGB8; KEY_COUNT]> = Signal::new();
 
     let led_loop = async {
@@ -230,19 +247,20 @@ async fn main(_spawner: Spawner) {
     let display_loop = async {
         let mut oled = Sh1106::new(oled_spi, oled_dc, oled_cs, oled_reset).await;
         let mut fb = Framebuffer::new();
-        display::render(&mut fb, &config.borrow(), &snapshot(&Engine::new(), Phase::Active));
+        display::render(&mut fb, &config.borrow(), &snapshot(&Engine::new(), Phase::Active, None));
         oled.flush(&fb).await;
         oled.set_contrast(CONTRAST_ACTIVE).await;
         oled.on().await;
         let mut shown = Phase::Active;
         loop {
-            let snap = screen.wait().await;
-            if snap.phase != Phase::Off {
-                display::render(&mut fb, &config.borrow(), &snap);
+            let next = screen.wait().await;
+            let phase = next.phase();
+            if phase != Phase::Off {
+                display::render_screen(&mut fb, &config.borrow(), &next);
                 oled.flush(&fb).await;
             }
-            if snap.phase != shown {
-                match snap.phase {
+            if phase != shown {
+                match phase {
                     Phase::Active => oled.set_contrast(CONTRAST_ACTIVE).await,
                     Phase::Dim => oled.set_contrast(CONTRAST_DIM).await,
                     Phase::Off => oled.off().await,
@@ -250,7 +268,7 @@ async fn main(_spawner: Spawner) {
                 if shown == Phase::Off {
                     oled.on().await;
                 }
-                shown = snap.phase;
+                shown = phase;
             }
         }
     };
@@ -267,6 +285,10 @@ async fn main(_spawner: Spawner) {
         let mut last_activity = embassy_time::Instant::now();
         let mut current_phase = Phase::Active;
         let mut host_leds = keyboard::host_leds();
+        let mut menu: Option<Menu> = None;
+        // After opening the menu, inputs are ignored until all keys are up.
+        let mut menu_armed = false;
+        let mut notice: Option<(String, u64)> = None;
 
         loop {
             ticker.next().await;
@@ -274,9 +296,7 @@ async fn main(_spawner: Spawner) {
 
             let mut events: Vec<Event, 16> = Vec::new();
             debouncer.scan(&buttons, &mut events);
-            // Hard-wired escape hatch, independent of the config: knob +
-            // keys 10 and 12 (bottom corners) reboots into the UF2 bootloader.
-            if debouncer.is_pressed(12) && debouncer.is_pressed(9) && debouncer.is_pressed(11) {
+            if BOOTLOADER_COMBO.iter().all(|&b| debouncer.is_pressed(b)) {
                 embassy_rp::rom_data::reset_to_usb_boot(0, 0);
             }
             if let Some(event) = encoder.update(rot_a.is_high(), rot_b.is_high()) {
@@ -287,12 +307,14 @@ async fn main(_spawner: Spawner) {
             // Heap-allocated so a burst of outputs can't be truncated
             // (a dropped release would leave a key stuck).
             let mut outputs: alloc::vec::Vec<Output> = alloc::vec::Vec::new();
+            let mut open_settings = menu.is_none() && SETTINGS_COMBO.iter().all(|&b| debouncer.is_pressed(b));
+            let mut switch: Option<i32> = None;
+            let mut replace_config: Option<(Config, Option<String>)> = None;
 
-            // A newly uploaded config: release everything, then swap.
+            // A newly uploaded config: leave the menu, release everything, swap.
             if let Some(next) = new_config.try_take() {
-                engine.reset(&mut |o| outputs.push(o));
-                *config.borrow_mut() = next;
-                screen_dirty = true;
+                menu = None;
+                replace_config = Some((next, None));
             }
             let leds_now = keyboard::host_leds();
             if leds_now != host_leds {
@@ -302,7 +324,48 @@ async fn main(_spawner: Spawner) {
             if !events.is_empty() {
                 last_activity = embassy_time::Instant::now();
             }
+            if let Some((_, until)) = &notice
+                && now.0 >= *until
             {
+                notice = None;
+                screen_dirty = true;
+            }
+
+            if let Some(m) = menu.as_mut() {
+                // ---- Settings menu ----
+                if !menu_armed {
+                    menu_armed = (0..BUTTON_COUNT).all(|b| !debouncer.is_pressed(b));
+                    events.clear();
+                }
+                let mut outcome = MenuOutcome::Stay;
+                for event in events {
+                    let input = match event {
+                        Event::Press(b) if b == Button::ENCODER => MenuInput::Select,
+                        Event::Press(b) => MenuInput::Key(b.index()),
+                        Event::Rotate(dir) => MenuInput::Rotate(dir),
+                        Event::Release(_) => continue,
+                    };
+                    outcome = m.handle(input);
+                    screen_dirty = true;
+                    if outcome != MenuOutcome::Stay {
+                        break;
+                    }
+                }
+                match outcome {
+                    MenuOutcome::Stay => {}
+                    MenuOutcome::Cancel => {
+                        menu = None;
+                        screen_dirty = true;
+                    }
+                    MenuOutcome::Save => {
+                        let (next, text) = ui::save_menu(&store, &config.borrow(), m);
+                        menu = None;
+                        replace_config = Some((next, Some(text)));
+                    }
+                }
+                current_phase = Phase::Active;
+            } else {
+                // ---- Normal operation ----
                 let config = config.borrow();
                 // Any input wakes the device; the waking input is not swallowed.
                 let new_phase = phase(&config, last_activity.elapsed().as_millis());
@@ -310,17 +373,56 @@ async fn main(_spawner: Spawner) {
                     current_phase = new_phase;
                     screen_dirty = true;
                 }
-                screen_dirty |= engine.tick(&config, now, &mut |o| outputs.push(o));
-                for event in events {
-                    screen_dirty |= matches!(event, Event::Press(_) | Event::Release(_));
-                    engine.handle(&config, event, now, &mut |o| outputs.push(o));
+                if !open_settings {
+                    screen_dirty |= engine.tick(&config, now, &mut |o| outputs.push(o));
+                    for event in events {
+                        screen_dirty |= matches!(event, Event::Press(_) | Event::Release(_));
+                        engine.handle(&config, event, now, &mut |o| outputs.push(o));
+                    }
+                }
+                for output in &outputs {
+                    match output {
+                        Output::System(SystemAction::Settings) => open_settings = true,
+                        Output::System(SystemAction::NextProfile) => switch = Some(1),
+                        Output::System(SystemAction::PrevProfile) => switch = Some(-1),
+                        Output::System(SystemAction::Bootloader) => embassy_rp::rom_data::reset_to_usb_boot(0, 0),
+                        _ => {}
+                    }
                 }
             }
 
+            if let Some(delta) = switch {
+                let switched = ui::switch_profile(&store, &config.borrow(), delta);
+                match switched {
+                    Some((next, name)) => replace_config = Some((next, Some(name))),
+                    None => {
+                        notice = Some((String::from("Only one profile"), now.0 + NOTICE_MS));
+                        screen_dirty = true;
+                    }
+                }
+            }
+            if open_settings && menu.is_none() && replace_config.is_none() {
+                engine.reset(&mut |o| outputs.push(o));
+                menu = Some(ui::open_menu(&store, &config.borrow()));
+                menu_armed = false;
+                screen_dirty = true;
+            }
+            if let Some((next, text)) = replace_config {
+                engine.reset(&mut |o| outputs.push(o));
+                *config.borrow_mut() = next;
+                notice = text.map(|t| (t, now.0 + NOTICE_MS));
+                last_activity = embassy_time::Instant::now();
+                screen_dirty = true;
+            }
+
             for output in outputs {
-                if let Output::LayerChanged(layer) = output {
-                    led.set_level(if layer == LayerId::BASE { Level::Low } else { Level::High });
-                    continue;
+                match output {
+                    Output::LayerChanged(layer) => {
+                        led.set_level(if layer == LayerId::BASE { Level::Low } else { Level::High });
+                        continue;
+                    }
+                    Output::System(_) => continue,
+                    _ => {}
                 }
                 // Send after every output so a press+release pair (encoder
                 // tap) shows up as two separate reports.
@@ -343,8 +445,17 @@ async fn main(_spawner: Spawner) {
                 }
             }
             if screen_dirty {
-                screen.signal(snapshot(&engine, current_phase));
-                lights.signal(led_frame(&config.borrow(), &engine, current_phase));
+                match &menu {
+                    Some(m) => {
+                        screen.signal(Screen::Menu(MenuScreen::of(m)));
+                        lights.signal(ui::menu_led_frame(m, LED_MAX_MA));
+                    }
+                    None => {
+                        let text = notice.as_ref().map(|(t, _)| t.clone());
+                        screen.signal(Screen::Status(snapshot(&engine, current_phase, text)));
+                        lights.signal(led_frame(&config.borrow(), &engine, current_phase));
+                    }
+                }
             }
         }
     };

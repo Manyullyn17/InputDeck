@@ -93,7 +93,8 @@ impl Category {
                 Category::of(KeyBinding::Action(a))
             }
             KeyBinding::Toggle(Toggle::Layer(_)) => Category::LayerKey,
-            KeyBinding::Macro(_) => Category::Macro,
+            // System bindings share the macro color.
+            KeyBinding::Macro(_) | KeyBinding::System(_) => Category::Macro,
             KeyBinding::None | KeyBinding::Inherit => Category::Unbound,
         }
     }

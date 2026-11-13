@@ -3,7 +3,7 @@
 
 use core::fmt::{self, Write};
 
-use crate::config::{Action, Config, KeyBinding, KeyCode, LayerId, Modifiers, Toggle};
+use crate::config::{Action, Config, KeyBinding, KeyCode, LayerId, Modifiers, SystemAction, Toggle};
 
 /// Writes a short label for an effective (already resolved) binding:
 /// `>Name` hold layer, `^Name` layer toggle, `~A` latch, `*A` repeat,
@@ -27,6 +27,12 @@ pub fn write_binding(w: &mut impl Write, config: &Config, binding: KeyBinding) -
             w.write_char('*')?;
             write_action(w, action)
         }
+        KeyBinding::System(action) => w.write_str(match action {
+            SystemAction::Settings => "Setup",
+            SystemAction::NextProfile => "Prof+",
+            SystemAction::PrevProfile => "Prof-",
+            SystemAction::Bootloader => "Boot",
+        }),
         KeyBinding::Macro(id) => match config.macro_(id) {
             Some(m) if !m.name.is_empty() => w.write_str(&m.name),
             _ => write!(w, "M{}", id.0),

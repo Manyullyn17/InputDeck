@@ -104,6 +104,9 @@ pub fn write(config: &Config) -> String {
     let o = &mut out;
     writeln!(o, "# Macropad OS config, pulled from the device.").unwrap();
     writeln!(o, "# See configs/demo.toml in the repository for the format.\n").unwrap();
+    if !config.name.is_empty() {
+        writeln!(o, "name = {}\n", quote(&config.name)).unwrap();
+    }
     // The char map is written out in full, so the file doesn't depend on
     // the layout being available where it is compiled.
     writeln!(o, "[layout]").unwrap();

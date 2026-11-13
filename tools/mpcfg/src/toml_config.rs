@@ -26,6 +26,8 @@ pub const NO_PARENT: &str = "none";
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct File {
+    /// Profile name, shown when switching profiles on the device.
+    pub name: Option<String>,
     /// The computer's keyboard layout for typing text: a name ("us", "de",
     /// "system", "xkb:<name>") or a table with `base` and per-character
     /// `chars` overrides.
@@ -229,6 +231,7 @@ pub fn compile(file: &File) -> Result<Config> {
     }
 
     let mut config = Config::new(layers);
+    config.name = file.name.clone().unwrap_or_default();
 
     for (id, src) in &file.macros {
         config.macros.push(compile_macro(src).with_context(|| format!("in [macros.{id}]"))?);
@@ -476,6 +479,13 @@ mod tests {
         assert_eq!(c.resolve_button(LayerId(3), Button::key(4).unwrap()), key(0x06)); // inherited "c"
         assert_eq!(c.layers[1].palette.key, Color::Rgb(Rgb::new(0, 255, 180)));
         assert_eq!(c.layers[0].key_colors[11].held, Color::Rgb(Rgb::new(255, 220, 0)));
+    }
+
+    #[test]
+    fn numpad_profile_compiles() {
+        let c = parse(include_str!("../../../configs/numpad.toml")).unwrap();
+        assert_eq!(c.name, "Numpad");
+        assert_eq!(c.layers.len(), 1);
     }
 
     #[test]

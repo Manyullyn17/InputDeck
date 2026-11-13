@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::{Config, ConfigError};
 
 pub const MAGIC: [u8; 4] = *b"MPOS";
-pub const FORMAT_VERSION: u16 = 4;
+pub const FORMAT_VERSION: u16 = 5;
 pub const HEADER_LEN: usize = 16;
 
 /// Everything stored on the device. Several profiles fit the format; only

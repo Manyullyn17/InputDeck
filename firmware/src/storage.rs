@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use embassy_rp::flash::{Blocking, ERASE_SIZE, Flash};
 use embassy_rp::peripherals::FLASH;
 use macropad_engine::Config;
-use macropad_engine::codec::{self, HEADER_LEN};
+use macropad_engine::codec::{self, Bundle, HEADER_LEN};
 
 pub const FLASH_SIZE: usize = 8 * 1024 * 1024;
 /// Must match the region excluded from FLASH in memory.x.
@@ -71,8 +71,12 @@ impl Storage {
         self.read_slot(slot).map(|(_, bytes)| bytes)
     }
 
+    pub fn read_bundle(&mut self) -> Option<Bundle> {
+        codec::decode(&self.read_active()?).ok()
+    }
+
     pub fn load(&mut self) -> Option<Config> {
-        codec::decode(&self.read_active()?).ok()?.into_active_config()
+        self.read_bundle()?.into_active_config()
     }
 
     /// Stores an encoded config (already validated by the caller). Blocks
