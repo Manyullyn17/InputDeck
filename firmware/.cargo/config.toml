@@ -2,6 +2,6 @@
 target = "thumbv6m-none-eabi"
 
 [target.thumbv6m-none-eabi]
-# Converts the ELF to UF2 and copies it to the RPI-RP2 drive
-# (hold the encoder button while plugging in to enter the bootloader).
-runner = "elf2uf2-rs -d"
+# Waits for the RPI-RP2 drive, mounts it if needed, and flashes via elf2uf2-rs.
+# Enter the bootloader with knob + keys 10 and 12 (or hold the knob while plugging in).
+runner = "./flash.sh"
