@@ -18,14 +18,16 @@ Latch and repeat are separate on purpose: some applications need a key held down
 
 While a toggle is on, its key uses its **active** LED color (see [leds.md](leds.md)).
 
+**An active toggle owns its physical key.** The next press of that key turns the toggle off, whatever the key means on the current layer. Without this, switching layers could leave a toggle that can't be turned off from where you are.
+
+**A layer toggle behaves like a layer key that is held without being held.** It pushes a layer-path entry that counts as held until the toggle is turned off. Turning it off is then exactly like releasing a layer key: if layers above it are active, the entry stays in the path (shown dimmed) and is popped once those layers are released, per the rules in [meta-layers.md](meta-layers.md).
+
 ### Proposed
 
-- **An active toggle owns its physical key.** The next press of that key turns the toggle off, whatever the key means on the current layer. Without this, switching layers could leave a toggle that can't be turned off from where you are.
 - Key repeat has a configurable interval per binding.
 
 ### Open
 
-- How a toggled layer interacts with the layer path. For example, does it sit in the stack like a held layer key that never gets released? What happens when held layer keys above it are released, or when the toggle is turned off while layers above it are active?
 - Whether there should be a "turn off all toggles" action, separate from the device reset.
 
 ## Macros
@@ -55,14 +57,18 @@ LEDs: a running one-shot uses the held color until it finishes; an active toggle
 - **Toggle macro stop:** finish the current run, or stop immediately. A per-macro setting.
 - **Pressing a running one-shot again:** ignore for now. Later options may include cancel, restart, or queue another run after the current one. The config format should make room for this as a per-macro setting.
 
-### Proposed
+### Decided
 
 - When a macro stops early (stop immediately, cancel, device reset), every key it is still holding down is released, so nothing gets stuck.
+- **Text needs a keyboard layout setting.** USB keyboards send key positions, not characters; the computer turns them into characters using its layout (e.g. US vs. German, where Y/Z and most symbols differ). The device cannot query the computer's layout over USB, so the layout is a device setting. The desktop app can detect the active (and installed) layouts and fill it in; without the app it is chosen manually.
+
+### Proposed
+
 - Text typing has a default delay between characters, overridable per macro.
+- Characters that don't exist in the selected layout are reported by config validation.
 
 ### Open
 
-- **Text and keyboard layouts.** USB keyboards send key positions, not characters; the computer turns them into characters using its keyboard layout. Typing text correctly needs to know the computer's layout (e.g. US vs. German, where Y/Z and most symbols differ). Likely a global setting, with characters missing from the layout skipped or reported by validation.
 - Whether several macros can run at the same time, and what happens when a macro and a held key press the same key.
 - Whether macros can trigger layer changes, or only send keys.
 
