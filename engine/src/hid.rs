@@ -4,6 +4,10 @@
 //! it pressed until both are released. The caller should send reports after
 //! every applied output (not once per event), or an encoder tap
 //! (press + release in one event) would never reach the host.
+//!
+//! Keys typed by text macros (`TypePress`) are reported with exactly their
+//! own modifiers: while one is down, other held modifiers are suppressed,
+//! so typed text comes out right even while e.g. Shift is held.
 
 use crate::config::{Action, Modifiers};
 use crate::engine::Output;
@@ -22,9 +26,20 @@ const CONSUMER_SLOTS: usize = 4;
 pub struct HidState {
     key_counts: [u8; 256],
     mod_counts: [u8; 8],
+    typed_counts: [u8; 256],
+    typed_mod_counts: [u8; 8],
+    typed_down: u16,
     /// Pressed consumer usages in press order; the newest is reported.
     consumer: [u16; CONSUMER_SLOTS],
     consumer_len: usize,
+}
+
+fn adjust(counts: &mut [u8; 8], mods: Modifiers, press: bool) {
+    for (bit, count) in counts.iter_mut().enumerate() {
+        if mods.0 & (1 << bit) != 0 {
+            *count = if press { count.saturating_add(1) } else { count.saturating_sub(1) };
+        }
+    }
 }
 
 impl Default for HidState {
@@ -38,6 +53,9 @@ impl HidState {
         HidState {
             key_counts: [0; 256],
             mod_counts: [0; 8],
+            typed_counts: [0; 256],
+            typed_mod_counts: [0; 8],
+            typed_down: 0,
             consumer: [0; CONSUMER_SLOTS],
             consumer_len: 0,
         }
@@ -68,28 +86,38 @@ impl HidState {
                     self.consumer_len -= 1;
                 }
             }
+            Output::TypePress { code, mods } => {
+                let c = &mut self.typed_counts[code.0 as usize];
+                *c = c.saturating_add(1);
+                adjust(&mut self.typed_mod_counts, mods, true);
+                self.typed_down = self.typed_down.saturating_add(1);
+            }
+            Output::TypeRelease { code, mods } => {
+                let c = &mut self.typed_counts[code.0 as usize];
+                *c = c.saturating_sub(1);
+                adjust(&mut self.typed_mod_counts, mods, false);
+                self.typed_down = self.typed_down.saturating_sub(1);
+            }
             Output::LayerChanged(_) => {}
         }
     }
 
     fn adjust_mods(&mut self, mods: Modifiers, press: bool) {
-        for (bit, count) in self.mod_counts.iter_mut().enumerate() {
-            if mods.0 & (1 << bit) != 0 {
-                *count = if press { count.saturating_add(1) } else { count.saturating_sub(1) };
-            }
-        }
+        adjust(&mut self.mod_counts, mods, press);
     }
 
     pub fn keyboard_report(&self) -> KeyboardReport {
         let mut report = KeyboardReport::default();
-        for (bit, &count) in self.mod_counts.iter().enumerate() {
+        let mods = if self.typed_down > 0 { &self.typed_mod_counts } else { &self.mod_counts };
+        for (bit, &count) in mods.iter().enumerate() {
             if count > 0 {
                 report.modifiers |= 1 << bit;
             }
         }
         let mut n = 0;
-        for (code, &count) in self.key_counts.iter().enumerate() {
-            if count == 0 {
+        // Code 0 means "no key" (modifier-only actions).
+        for (code, (&count, &typed)) in self.key_counts.iter().zip(&self.typed_counts).enumerate().skip(1) {
+            if count == 0 && typed == 0 {
                 continue;
             }
             if n == report.keys.len() {
@@ -148,6 +176,19 @@ mod tests {
             h.apply(Output::Press(act(code)));
         }
         assert_eq!(h.keyboard_report().keys, [ERROR_ROLLOVER; 6]);
+    }
+
+    #[test]
+    fn typed_keys_use_exactly_their_modifiers() {
+        let mut h = HidState::new();
+        let shift_held = Action::Key { code: KeyCode(0xE1), mods: Modifiers::LSHIFT };
+        h.apply(Output::Press(shift_held));
+        h.apply(Output::TypePress { code: KeyCode(0x04), mods: Modifiers::NONE });
+        let r = h.keyboard_report();
+        assert_eq!(r.modifiers, 0); // shift suppressed while typing 'a'
+        assert!(r.keys.contains(&0x04) && r.keys.contains(&0xE1));
+        h.apply(Output::TypeRelease { code: KeyCode(0x04), mods: Modifiers::NONE });
+        assert_eq!(h.keyboard_report().modifiers, Modifiers::LSHIFT.0);
     }
 
     #[test]

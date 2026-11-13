@@ -7,6 +7,10 @@
 #   _                 inherit from the parent layer (or nothing on base)
 #   none              nothing
 #   layer:<id>        hold for that layer
+#   toggle:<id>       toggle that layer on/off
+#   latch:<action>    hold the action down until pressed again
+#   repeat:<action>@<ms>  tap the action every <ms> until pressed again (default 100)
+#   macro:<id>        run a macro (see [macros] at the bottom)
 #   a, 7, f5, enter, esc, space, tab, backspace, up, left, home, pgup, -, [, ...
 #   ctrl+c, shift+alt+t, gui+space, rctrl+x   keys with modifiers
 #   vol+, vol-, mute, play, next, prev, stop  media keys
@@ -14,12 +18,19 @@
 #
 # Colors: "#rrggbb", "off", or "_" (inherit).
 
+# The computer's keyboard layout, used to type text in macros: "us" or "de".
+layout = "us"
+
+[timing]
+tap = 8             # ms a tapped/typed key is held down
+char_delay = 8      # ms between typed characters
+
 [leds]
 brightness = 60     # percent
 idle_level = 45     # percent of held brightness
 held_style = "brighten"   # brighten | white | invert
 # Global category colors (unset ones keep the built-in defaults).
-palette = { layer_key = "#005aff", key = "#ff963c", modified = "#aa00ff", media = "#00ff46", unbound = "off" }
+palette = { layer_key = "#005aff", key = "#ff963c", modified = "#aa00ff", media = "#00ff46", macro = "#ffd200", unbound = "off" }
 
 [idle]
 dim_after = 60      # seconds, 0 = never
@@ -39,7 +50,7 @@ keys = [
   "e",         "f",         "g",
   "h",         "i",         "j",
 ]
-encoder = { cw = "vol+", ccw = "vol-", press = "mute" }
+encoder = { cw = "vol+", ccw = "vol-", press = "toggle:tools" }
 colors = { 12 = { idle = "#ff0000", held = "#ffdc00" } }
 
 [layers.one]
@@ -82,3 +93,39 @@ keys = [
   "_", "_", "_",
   "_", "_", "_",
 ]
+
+# Toggled with the knob button. Press the knob again to leave.
+[layers.tools]
+name = "Tools"
+keys = [
+  "macro:hello",  "macro:ticker",       "latch:shift",
+  "repeat:b@250", "macro:hold_x",       "macro:shout",
+  "_",            "_",                  "_",
+  "_",            "_",                  "_",
+]
+encoder = { cw = "vol+", ccw = "vol-" }
+palette = { key = "#ff4000" }
+colors = { 2 = { active = "#00ff00" } }
+
+# Macros. Steps: "down:<action>", "up:<action>", "tap:<action>" (or just
+# "<action>"), "delay:<ms>", "text:<text>".
+# type: "once" (default), "while_held", "toggle". Toggle macros also take
+# stop = "finish" (default, completes the current run) or "immediate".
+
+[macros.hello]
+name = "Hello"
+steps = ["text:Hello from Macropad OS!", "enter"]
+
+[macros.ticker]
+name = "Tick"
+type = "toggle"
+steps = ["text:tick ", "delay:500"]
+
+[macros.hold_x]
+name = "Hold x"
+type = "while_held"
+steps = ["x", "delay:150"]
+
+[macros.shout]
+name = "Shout"
+steps = ["down:shift", "text:abc", "up:shift", "text: (typed with shift held, still lowercase)"]

@@ -34,7 +34,7 @@ use embassy_usb::Builder;
 use embassy_usb::class::hid::{self, HidBootProtocol, HidSubclass, HidWriter};
 use heapless::Vec;
 use macropad_engine::led::{self, Rgb};
-use macropad_engine::{BUTTON_COUNT, Config, Engine, Event, HidState, Instant, KEY_COUNT, LayerId, Output};
+use macropad_engine::{BUTTON_COUNT, Config, Engine, Event, HidState, Instant, KEY_COUNT, KeyLight, LayerId, Output};
 use smart_leds::RGB8;
 use panic_halt as _;
 use usbd_hid::descriptor::{KeyboardReport, MediaKeyboardReport, SerializedDescriptor};
@@ -85,9 +85,13 @@ fn led_frame(config: &Config, engine: &Engine, phase: Phase) -> [RGB8; KEY_COUNT
 }
 
 fn snapshot(engine: &Engine, phase: Phase) -> Snapshot {
+    // Highlighted on the OLED: held, toggled on, or running a macro.
     let mut held = [false; BUTTON_COUNT];
     for (i, h) in held.iter_mut().enumerate() {
-        *h = engine.is_held(input::button(i));
+        *h = matches!(
+            engine.key_light(input::button(i)),
+            KeyLight::Held { .. } | KeyLight::Active { .. } | KeyLight::Running { .. }
+        );
     }
     Snapshot { phase, layer: engine.layer(), path: engine.layer_path().collect(), held }
 }
@@ -275,33 +279,34 @@ async fn main(_spawner: Spawner) {
                 current_phase = new_phase;
                 screen_dirty = true;
             }
+            // Heap-allocated so a burst of outputs can't be truncated
+            // (a dropped release would leave a key stuck).
+            let mut outputs: alloc::vec::Vec<Output> = alloc::vec::Vec::new();
+            screen_dirty |= engine.tick(&config, now, &mut |o| outputs.push(o));
             for event in events {
                 screen_dirty |= matches!(event, Event::Press(_) | Event::Release(_));
-                let mut outputs: Vec<Output, 16> = Vec::new();
-                engine.handle(&config, event, now, &mut |o| {
-                    let _ = outputs.push(o);
-                });
+                engine.handle(&config, event, now, &mut |o| outputs.push(o));
+            }
 
-                for output in outputs {
-                    if let Output::LayerChanged(layer) = output {
-                        led.set_level(if layer == LayerId::BASE { Level::Low } else { Level::High });
-                        continue;
-                    }
-                    // Send after every output so a press+release pair (encoder
-                    // tap) shows up as two separate reports.
-                    hid_state.apply(output);
-                    let r = hid_state.keyboard_report();
-                    let k = r.keys;
-                    let report = [r.modifiers, 0, k[0], k[1], k[2], k[3], k[4], k[5]];
-                    if report != sent_keyboard {
-                        let _ = keyboard.write(&report).await;
-                        sent_keyboard = report;
-                    }
-                    let m = hid_state.consumer_report();
-                    if m != sent_media {
-                        let _ = media.write(&m.to_le_bytes()).await;
-                        sent_media = m;
-                    }
+            for output in outputs {
+                if let Output::LayerChanged(layer) = output {
+                    led.set_level(if layer == LayerId::BASE { Level::Low } else { Level::High });
+                    continue;
+                }
+                // Send after every output so a press+release pair (encoder
+                // tap) shows up as two separate reports.
+                hid_state.apply(output);
+                let r = hid_state.keyboard_report();
+                let k = r.keys;
+                let report = [r.modifiers, 0, k[0], k[1], k[2], k[3], k[4], k[5]];
+                if report != sent_keyboard {
+                    let _ = keyboard.write(&report).await;
+                    sent_keyboard = report;
+                }
+                let m = hid_state.consumer_report();
+                if m != sent_media {
+                    let _ = media.write(&m.to_le_bytes()).await;
+                    sent_media = m;
                 }
             }
             if screen_dirty {

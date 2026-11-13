@@ -5,6 +5,10 @@
 //! | `_` | inherit |
 //! | `none` or empty | nothing |
 //! | `layer:<id>` | hold for layer `<id>` |
+//! | `toggle:<id>` | toggle layer `<id>` on/off |
+//! | `latch:<action>` | hold `<action>` down until pressed again |
+//! | `repeat:<action>` / `repeat:<action>@<ms>` | tap `<action>` repeatedly (default every 100 ms) until pressed again |
+//! | `macro:<id>` | run macro `<id>` |
 //! | `a`, `7`, `f5`, `enter`, `left`, `-`, ... | a key |
 //! | `ctrl+shift+t`, `rctrl+c`, `gui+space` | a key with modifiers |
 //! | `0x2c`, `ctrl+0x2c` | a raw HID keyboard usage |
@@ -12,12 +16,15 @@
 //! | `media:0xb5` | a raw consumer-control usage |
 //! | `#rrggbb`, `off`, `_` | colors |
 //!
+//! Macro steps: `down:<action>`, `up:<action>`, `tap:<action>` (or just
+//! `<action>`), `delay:<ms>`, `text:<text>` (taken literally).
+//!
 //! Parsing is case-insensitive. Formatting produces the canonical names.
 
 use alloc::string::String;
 use core::fmt::{self, Write};
 
-use crate::config::{Action, EncoderBinding, KeyBinding, KeyCode, LayerId, Modifiers};
+use crate::config::{Action, EncoderBinding, KeyBinding, KeyCode, LayerId, MacroId, Modifiers, Step, Toggle};
 use crate::led::{Color, Rgb};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,6 +32,7 @@ pub enum ParseError {
     UnknownKey,
     UnknownModifier,
     UnknownLayer,
+    UnknownMacro,
     BadNumber,
     BadColor,
     /// A layer key where only actions are allowed.
@@ -37,6 +45,7 @@ impl fmt::Display for ParseError {
             ParseError::UnknownKey => "unknown key name",
             ParseError::UnknownModifier => "unknown modifier",
             ParseError::UnknownLayer => "unknown layer",
+            ParseError::UnknownMacro => "unknown macro",
             ParseError::BadNumber => "invalid number",
             ParseError::BadColor => "invalid color (expected #rrggbb, off or _)",
             ParseError::LayerNotAllowed => "layer keys are not allowed here",
@@ -192,12 +201,21 @@ pub fn parse_action(text: &str) -> Result<Action, ParseError> {
             mods |= bit;
         }
     }
+    // A modifier on its own ("shift", "ctrl+alt") is modifier bits without a key.
+    if let Some(&(_, bit)) = MODS.iter().find(|(name, _)| *name == key_part) {
+        return Ok(Action::Key { code: KeyCode(0), mods: Modifiers(mods | bit) });
+    }
     Ok(Action::Key { code: parse_key(key_part)?, mods: Modifiers(mods) })
 }
 
-/// Parses a key binding. `layer` maps a layer id from `layer:<id>` to its
-/// index.
-pub fn parse_binding(text: &str, layer: impl Fn(&str) -> Option<LayerId>) -> Result<KeyBinding, ParseError> {
+pub const DEFAULT_REPEAT_MS: u16 = 100;
+
+/// Parses a key binding. `layer` and `macro_` map ids to indices.
+pub fn parse_binding(
+    text: &str,
+    layer: impl Fn(&str) -> Option<LayerId>,
+    macro_: impl Fn(&str) -> Option<MacroId>,
+) -> Result<KeyBinding, ParseError> {
     let t = text.trim();
     match lower(t).as_str() {
         "_" => return Ok(KeyBinding::Inherit),
@@ -207,7 +225,52 @@ pub fn parse_binding(text: &str, layer: impl Fn(&str) -> Option<LayerId>) -> Res
     if let Some(id) = t.strip_prefix("layer:") {
         return layer(id.trim()).map(KeyBinding::Layer).ok_or(ParseError::UnknownLayer);
     }
+    if let Some(id) = t.strip_prefix("toggle:") {
+        return layer(id.trim()).map(|l| KeyBinding::Toggle(Toggle::Layer(l))).ok_or(ParseError::UnknownLayer);
+    }
+    if let Some(id) = t.strip_prefix("macro:") {
+        return macro_(id.trim()).map(KeyBinding::Macro).ok_or(ParseError::UnknownMacro);
+    }
+    if let Some(a) = t.strip_prefix("latch:") {
+        return parse_action(a).map(|a| KeyBinding::Toggle(Toggle::Latch(a)));
+    }
+    if let Some(rest) = t.strip_prefix("repeat:") {
+        let (a, interval_ms) = match rest.rsplit_once('@') {
+            Some((a, ms)) => (a, parse_ms(ms)?),
+            None => (rest, DEFAULT_REPEAT_MS),
+        };
+        if interval_ms < 2 {
+            return Err(ParseError::BadNumber);
+        }
+        return parse_action(a).map(|action| KeyBinding::Toggle(Toggle::Repeat { action, interval_ms }));
+    }
     parse_action(t).map(KeyBinding::Action)
+}
+
+/// Milliseconds, with an optional `ms` suffix.
+fn parse_ms(text: &str) -> Result<u16, ParseError> {
+    let t = lower(text);
+    t.strip_suffix("ms").unwrap_or(&t).trim().parse().map_err(|_| ParseError::BadNumber)
+}
+
+pub fn parse_step(text: &str) -> Result<Step, ParseError> {
+    if let Some(literal) = text.strip_prefix("text:") {
+        return Ok(Step::Text(literal.into()));
+    }
+    let t = text.trim();
+    if let Some(a) = t.strip_prefix("down:") {
+        return parse_action(a).map(Step::Down);
+    }
+    if let Some(a) = t.strip_prefix("up:") {
+        return parse_action(a).map(Step::Up);
+    }
+    if let Some(a) = t.strip_prefix("tap:") {
+        return parse_action(a).map(Step::Tap);
+    }
+    if let Some(ms) = t.strip_prefix("delay:") {
+        return parse_ms(ms).map(|ms| Step::Delay { ms });
+    }
+    parse_action(t).map(Step::Tap)
 }
 
 pub fn parse_encoder(text: &str) -> Result<EncoderBinding, ParseError> {
@@ -238,14 +301,25 @@ pub fn write_action(w: &mut impl Write, action: Action) -> fmt::Result {
             None => write!(w, "media:0x{usage:02x}"),
         },
         Action::Key { code, mods } => {
+            let mut first = true;
             for bit in (0..8).map(|i| 1u8 << i) {
                 if mods.0 & bit != 0 {
                     let (name, _) = MODS.iter().find(|&&(_, b)| b == bit).unwrap();
-                    write!(w, "{name}+")?;
+                    if code.0 == 0 {
+                        // Modifier-only: "ctrl+shift" without a trailing "+".
+                        if !first {
+                            w.write_char('+')?;
+                        }
+                        w.write_str(name)?;
+                    } else {
+                        write!(w, "{name}+")?;
+                    }
+                    first = false;
                 }
             }
             let c = code.0;
             match c {
+                0 if mods.0 != 0 => Ok(()),
                 0x04..=0x1D => w.write_char((b'a' + c - 0x04) as char),
                 0x1E..=0x26 => w.write_char((b'1' + c - 0x1E) as char),
                 0x27 => w.write_char('0'),
@@ -260,11 +334,12 @@ pub fn write_action(w: &mut impl Write, action: Action) -> fmt::Result {
     }
 }
 
-/// Formats a binding; `layer` gives the id written after `layer:`.
+/// Formats a binding; `layer` and `macro_` write ids for references.
 pub fn write_binding<W: Write>(
     w: &mut W,
     binding: KeyBinding,
     layer: impl Fn(&mut W, LayerId) -> fmt::Result,
+    macro_: impl Fn(&mut W, MacroId) -> fmt::Result,
 ) -> fmt::Result {
     match binding {
         KeyBinding::Inherit => w.write_char('_'),
@@ -273,7 +348,43 @@ pub fn write_binding<W: Write>(
             w.write_str("layer:")?;
             layer(w, id)
         }
+        KeyBinding::Toggle(Toggle::Layer(id)) => {
+            w.write_str("toggle:")?;
+            layer(w, id)
+        }
+        KeyBinding::Toggle(Toggle::Latch(a)) => {
+            w.write_str("latch:")?;
+            write_action(w, a)
+        }
+        KeyBinding::Toggle(Toggle::Repeat { action, interval_ms }) => {
+            w.write_str("repeat:")?;
+            write_action(w, action)?;
+            write!(w, "@{interval_ms}")
+        }
+        KeyBinding::Macro(id) => {
+            w.write_str("macro:")?;
+            macro_(w, id)
+        }
         KeyBinding::Action(a) => write_action(w, a),
+    }
+}
+
+pub fn write_step(w: &mut impl Write, step: &Step) -> fmt::Result {
+    match step {
+        Step::Down(a) => {
+            w.write_str("down:")?;
+            write_action(w, *a)
+        }
+        Step::Up(a) => {
+            w.write_str("up:")?;
+            write_action(w, *a)
+        }
+        Step::Tap(a) => {
+            w.write_str("tap:")?;
+            write_action(w, *a)
+        }
+        Step::Delay { ms } => write!(w, "delay:{ms}"),
+        Step::Text(t) => write!(w, "text:{t}"),
     }
 }
 
@@ -293,17 +404,25 @@ mod tests {
         ["base", "nav"].iter().position(|&n| n == id).map(|i| LayerId(i as u8))
     }
 
+    fn macros(id: &str) -> Option<MacroId> {
+        (id == "hello").then_some(MacroId(0))
+    }
+
+    fn binding(text: &str) -> Result<KeyBinding, ParseError> {
+        parse_binding(text, layers, macros)
+    }
+
     fn key(code: u8, mods: u8) -> Action {
         Action::Key { code: KeyCode(code), mods: Modifiers(mods) }
     }
 
     #[test]
     fn parses_bindings() {
-        assert_eq!(parse_binding("_", layers), Ok(KeyBinding::Inherit));
-        assert_eq!(parse_binding("", layers), Ok(KeyBinding::None));
-        assert_eq!(parse_binding("layer:nav", layers), Ok(KeyBinding::Layer(LayerId(1))));
-        assert_eq!(parse_binding("layer:nope", layers), Err(ParseError::UnknownLayer));
-        assert_eq!(parse_binding("A", layers), Ok(KeyBinding::Action(key(0x04, 0))));
+        assert_eq!(binding("_"), Ok(KeyBinding::Inherit));
+        assert_eq!(binding(""), Ok(KeyBinding::None));
+        assert_eq!(binding("layer:nav"), Ok(KeyBinding::Layer(LayerId(1))));
+        assert_eq!(binding("layer:nope"), Err(ParseError::UnknownLayer));
+        assert_eq!(binding("A"), Ok(KeyBinding::Action(key(0x04, 0))));
     }
 
     #[test]
@@ -322,6 +441,27 @@ mod tests {
     }
 
     #[test]
+    fn parses_toggles_and_macros() {
+        let a = key(0x04, 0);
+        assert_eq!(binding("toggle:nav"), Ok(KeyBinding::Toggle(Toggle::Layer(LayerId(1)))));
+        assert_eq!(binding("latch:a"), Ok(KeyBinding::Toggle(Toggle::Latch(a))));
+        assert_eq!(binding("repeat:a"), Ok(KeyBinding::Toggle(Toggle::Repeat { action: a, interval_ms: 100 })));
+        assert_eq!(binding("repeat:a@25ms"), Ok(KeyBinding::Toggle(Toggle::Repeat { action: a, interval_ms: 25 })));
+        assert_eq!(binding("repeat:a@1"), Err(ParseError::BadNumber));
+        assert_eq!(binding("macro:hello"), Ok(KeyBinding::Macro(MacroId(0))));
+        assert_eq!(binding("macro:nope"), Err(ParseError::UnknownMacro));
+    }
+
+    #[test]
+    fn parses_steps() {
+        assert_eq!(parse_step("down:shift"), Ok(Step::Down(key(0x00, 0x02))));
+        assert_eq!(parse_action("ctrl+shift"), Ok(key(0x00, 0x03)));
+        assert_eq!(parse_step("delay:250"), Ok(Step::Delay { ms: 250 }));
+        assert_eq!(parse_step("enter"), Ok(Step::Tap(key(0x28, 0))));
+        assert_eq!(parse_step("text: Hi there "), Ok(Step::Text(" Hi there ".into())));
+    }
+
+    #[test]
     fn parses_colors() {
         assert_eq!(parse_color("#FF0080"), Ok(Color::Rgb(Rgb::new(255, 0, 128))));
         assert_eq!(parse_color("off"), Ok(Color::Off));
@@ -337,7 +477,7 @@ mod tests {
 
     #[test]
     fn format_parse_roundtrip() {
-        for text in ["a", "0", "f24", "ctrl+shift+t", "rgui+enter", "-", "0x64", "vol+", "media:0x183"] {
+        for text in ["a", "0", "f24", "ctrl+shift+t", "rgui+enter", "-", "0x64", "vol+", "media:0x183", "shift", "ctrl+alt"] {
             let action = parse_action(text).unwrap();
             let mut out = String::new();
             write_action(&mut out, action).unwrap();

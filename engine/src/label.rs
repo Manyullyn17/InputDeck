@@ -3,20 +3,62 @@
 
 use core::fmt::{self, Write};
 
-use crate::config::{Action, KeyBinding, KeyCode, Modifiers};
+use crate::config::{Action, Config, KeyBinding, KeyCode, LayerId, Modifiers, Toggle};
 
-/// Writes a short label for an effective (already resolved) binding.
-/// `None` and `Inherit` produce no text.
-pub fn write_binding(w: &mut impl Write, binding: KeyBinding) -> fmt::Result {
+/// Writes a short label for an effective (already resolved) binding:
+/// `>Name` hold layer, `^Name` layer toggle, `~A` latch, `*A` repeat,
+/// macros by name. `None` and `Inherit` produce no text.
+pub fn write_binding(w: &mut impl Write, config: &Config, binding: KeyBinding) -> fmt::Result {
     match binding {
         KeyBinding::None | KeyBinding::Inherit => Ok(()),
-        KeyBinding::Layer(id) => write!(w, ">L{}", id.0),
+        KeyBinding::Layer(id) => {
+            w.write_char('>')?;
+            write_layer(w, config, id)
+        }
+        KeyBinding::Toggle(Toggle::Layer(id)) => {
+            w.write_char('^')?;
+            write_layer(w, config, id)
+        }
+        KeyBinding::Toggle(Toggle::Latch(a)) => {
+            w.write_char('~')?;
+            write_action(w, a)
+        }
+        KeyBinding::Toggle(Toggle::Repeat { action, .. }) => {
+            w.write_char('*')?;
+            write_action(w, action)
+        }
+        KeyBinding::Macro(id) => match config.macro_(id) {
+            Some(m) if !m.name.is_empty() => w.write_str(&m.name),
+            _ => write!(w, "M{}", id.0),
+        },
         KeyBinding::Action(action) => write_action(w, action),
+    }
+}
+
+pub fn write_layer(w: &mut impl Write, config: &Config, id: LayerId) -> fmt::Result {
+    match config.layer(id) {
+        Some(l) if !l.name.is_empty() => w.write_str(&l.name),
+        _ => write!(w, "L{}", id.0),
     }
 }
 
 pub fn write_action(w: &mut impl Write, action: Action) -> fmt::Result {
     match action {
+        Action::Key { code: KeyCode(0), mods } if mods.0 != 0 => {
+            // Modifier-only, e.g. "Shift" or "CS".
+            let m = mods.0 | (mods.0 >> 4);
+            let names = [(0x01, "Ctrl", 'C'), (0x02, "Shift", 'S'), (0x04, "Alt", 'A'), (0x08, "Gui", 'G')];
+            if m.count_ones() == 1 {
+                let (_, name, _) = names.iter().find(|(b, _, _)| m & b != 0).unwrap();
+                return w.write_str(name);
+            }
+            for (bit, _, letter) in names {
+                if m & bit != 0 {
+                    w.write_char(letter)?;
+                }
+            }
+            Ok(())
+        }
         Action::Key { code, mods } => {
             write_mods(w, mods)?;
             write_key(w, code)
@@ -113,11 +155,21 @@ fn consumer_name(usage: u16) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::LayerId;
+    use crate::config::{Macro, MacroId, MacroKind, StopMode};
 
     fn label(binding: KeyBinding) -> String {
+        let mut layers = crate::testutil::example();
+        layers[1].name = "Nav".into();
+        let mut config = Config::new(layers);
+        config.macros.push(Macro {
+            name: "Hi".into(),
+            kind: MacroKind::OneShot,
+            steps: Vec::new(),
+            stop: StopMode::FinishRun,
+            char_delay_ms: None,
+        });
         let mut s = String::new();
-        write_binding(&mut s, binding).unwrap();
+        write_binding(&mut s, &config, binding).unwrap();
         s
     }
 
@@ -136,6 +188,12 @@ mod tests {
         assert_eq!(label(KeyBinding::Action(Action::Consumer(0xE9))), "Vol+");
         assert_eq!(label(KeyBinding::Action(Action::Consumer(0x123))), "c123");
         assert_eq!(label(KeyBinding::Layer(LayerId(3))), ">L3");
+        assert_eq!(label(KeyBinding::Layer(LayerId(1))), ">Nav");
+        assert_eq!(label(KeyBinding::Toggle(Toggle::Layer(LayerId(1)))), "^Nav");
+        let a = Action::Key { code: KeyCode(0x04), mods: Modifiers::NONE };
+        assert_eq!(label(KeyBinding::Toggle(Toggle::Latch(a))), "~A");
+        assert_eq!(label(KeyBinding::Toggle(Toggle::Repeat { action: a, interval_ms: 10 })), "*A");
+        assert_eq!(label(KeyBinding::Macro(MacroId(0))), "Hi");
         assert_eq!(label(KeyBinding::None), "");
     }
 }

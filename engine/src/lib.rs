@@ -12,6 +12,7 @@ pub mod config;
 pub mod engine;
 pub mod hid;
 pub mod label;
+pub mod layout;
 pub mod led;
 pub mod notation;
 pub mod protocol;

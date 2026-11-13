@@ -5,7 +5,6 @@
 //! DMA so key scanning keeps running during the transfer.
 
 use core::convert::Infallible;
-use core::fmt::Write;
 
 use embassy_rp::gpio::Output;
 use embassy_rp::peripherals::SPI1;
@@ -157,6 +156,7 @@ pub struct Snapshot {
     pub phase: Phase,
     pub layer: LayerId,
     pub path: Vec<LayerId, BUTTON_COUNT>,
+    /// Keys drawn inverted: held, toggled on, or running a macro.
     pub held: [bool; BUTTON_COUNT],
 }
 
@@ -166,14 +166,7 @@ const CELL_HEIGHT: i32 = 13;
 const COLUMNS: usize = 3;
 
 fn write_layer_name(out: &mut String<64>, config: &Config, id: LayerId) {
-    match config.layer(id) {
-        Some(layer) if !layer.name.is_empty() => {
-            let _ = out.push_str(&layer.name);
-        }
-        _ => {
-            let _ = write!(out, "L{}", id.0);
-        }
-    }
+    let _ = label::write_layer(out, config, id);
 }
 
 /// Header: layer path (e.g. "L1>L3"). Below: a 4x3 grid with each key's
@@ -214,7 +207,7 @@ pub fn render(fb: &mut Framebuffer, config: &Config, snap: &Snapshot) {
         };
 
         let mut text: String<16> = String::new();
-        let _ = label::write_binding(&mut text, config.resolve_button(snap.layer, button));
+        let _ = label::write_binding(&mut text, config, config.resolve_button(snap.layer, button));
         let _ = Text::with_baseline(&text, origin + Point::new(2, 2), style, Baseline::Top).draw(fb);
     }
 }

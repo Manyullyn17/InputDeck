@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 
+use crate::layout::{self, KeyboardLayout};
 use crate::led::{KeyColor, LedSettings, Palette};
 
 /// Number of mechanical keys.
@@ -89,6 +90,92 @@ pub enum KeyBinding {
     Action(Action),
     /// Hold to enter the target layer.
     Layer(LayerId),
+    /// Press to switch on, press again to switch off.
+    Toggle(Toggle),
+    /// Run a macro from [`Config::macros`].
+    Macro(MacroId),
+}
+
+impl KeyBinding {
+    /// Whether fallthrough passes this binding down to child layers. Layer
+    /// keys and layer toggles stay on their own layer.
+    pub fn is_inheritable(self) -> bool {
+        matches!(
+            self,
+            KeyBinding::Action(_)
+                | KeyBinding::Macro(_)
+                | KeyBinding::Toggle(Toggle::Latch(_) | Toggle::Repeat { .. })
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Toggle {
+    /// Holds the action down until switched off.
+    Latch(Action),
+    /// Taps the action every `interval_ms` until switched off.
+    Repeat { action: Action, interval_ms: u16 },
+    /// Keeps the layer active as if its key were held.
+    Layer(LayerId),
+}
+
+/// Index of a macro in [`Config::macros`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct MacroId(pub u8);
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Macro {
+    /// Label on the OLED. Empty means "M<index>".
+    pub name: String,
+    pub kind: MacroKind,
+    pub steps: Vec<Step>,
+    /// For toggle macros: what switching off does.
+    pub stop: StopMode,
+    /// Delay between typed characters; `None` uses [`MacroTiming`].
+    pub char_delay_ms: Option<u16>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MacroKind {
+    /// Runs once per press. Pressing again while it runs is ignored.
+    OneShot,
+    /// Runs repeatedly while held; finishes the current run after release.
+    WhileHeld,
+    /// Press to start repeating indefinitely, press again to stop.
+    Toggle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StopMode {
+    /// Finish the current run, then stop.
+    FinishRun,
+    /// Stop right away (releasing anything the macro holds).
+    Immediate,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Step {
+    /// Press and keep holding.
+    Down(Action),
+    /// Release something pressed by an earlier `Down`.
+    Up(Action),
+    /// Press, then release after [`MacroTiming::tap_ms`].
+    Tap(Action),
+    Delay { ms: u16 },
+    /// Type text using the configured keyboard layout.
+    Text(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MacroTiming {
+    /// How long taps and typed characters are held down.
+    pub tap_ms: u16,
+    /// Default pause between typed characters.
+    pub char_delay_ms: u16,
+}
+
+impl MacroTiming {
+    pub const DEFAULT: MacroTiming = MacroTiming { tap_ms: 8, char_delay_ms: 8 };
 }
 
 /// What an encoder rotation step means on a given layer.
@@ -166,6 +253,10 @@ pub struct Config {
     pub global: [Option<Action>; BUTTON_COUNT],
     pub leds: LedSettings,
     pub idle: IdleSettings,
+    pub macros: Vec<Macro>,
+    pub timing: MacroTiming,
+    /// The computer's keyboard layout, for typing text.
+    pub layout: KeyboardLayout,
 }
 
 /// Inactivity timeouts for LEDs and OLED, in seconds. 0 disables a stage.
@@ -199,6 +290,10 @@ pub enum ConfigError {
     UnknownLayerTarget { layer: LayerId, button: Button, target: LayerId },
     /// Following fallthrough parents from `layer` loops forever.
     ParentCycle { layer: LayerId },
+    TooManyMacros,
+    UnknownMacro { layer: LayerId, button: Button, target: MacroId },
+    /// A text step contains a character the keyboard layout can't type.
+    UntypeableChar { macro_id: MacroId, ch: char },
 }
 
 impl Config {
@@ -208,11 +303,18 @@ impl Config {
             global: [None; BUTTON_COUNT],
             leds: LedSettings::DEFAULT,
             idle: IdleSettings::DEFAULT,
+            macros: Vec::new(),
+            timing: MacroTiming::DEFAULT,
+            layout: KeyboardLayout::Us,
         }
     }
 
     pub fn layer(&self, id: LayerId) -> Option<&Layer> {
         self.layers.get(id.0 as usize)
+    }
+
+    pub fn macro_(&self, id: MacroId) -> Option<&Macro> {
+        self.macros.get(id.0 as usize)
     }
 
     /// Effective binding of `button` on `layer`. Never returns
@@ -246,8 +348,8 @@ impl Config {
         };
         self.walk(parent, |id, l| match l.buttons[i] {
             KeyBinding::Inherit => None,
-            KeyBinding::Action(a) => Some((KeyBinding::Action(a), Source::Layer(id))),
-            KeyBinding::None | KeyBinding::Layer(_) => Some(UNBOUND),
+            b if b.is_inheritable() => Some((b, Source::Layer(id))),
+            _ => Some(UNBOUND),
         })
         .unwrap_or(UNBOUND)
     }
@@ -297,6 +399,18 @@ impl Config {
         if self.layers[0].parent.is_some() {
             return Err(ConfigError::BaseHasParent);
         }
+        if self.macros.len() > u8::MAX as usize + 1 {
+            return Err(ConfigError::TooManyMacros);
+        }
+        for (i, m) in self.macros.iter().enumerate() {
+            for step in &m.steps {
+                if let Step::Text(text) = step
+                    && let Some(ch) = text.chars().find(|&c| layout::char_to_key(self.layout, c).is_none())
+                {
+                    return Err(ConfigError::UntypeableChar { macro_id: MacroId(i as u8), ch });
+                }
+            }
+        }
         for (i, layer) in self.layers.iter().enumerate() {
             let id = LayerId(i as u8);
             if let Some(parent) = layer.parent
@@ -305,14 +419,17 @@ impl Config {
                 return Err(ConfigError::UnknownParent { layer: id, parent });
             }
             for (b, binding) in layer.buttons.iter().enumerate() {
-                if let KeyBinding::Layer(target) = *binding
-                    && self.layer(target).is_none()
-                {
-                    return Err(ConfigError::UnknownLayerTarget {
-                        layer: id,
-                        button: Button(b as u8),
-                        target,
-                    });
+                let button = Button(b as u8);
+                match *binding {
+                    KeyBinding::Layer(target) | KeyBinding::Toggle(Toggle::Layer(target))
+                        if self.layer(target).is_none() =>
+                    {
+                        return Err(ConfigError::UnknownLayerTarget { layer: id, button, target });
+                    }
+                    KeyBinding::Macro(target) if self.macro_(target).is_none() => {
+                        return Err(ConfigError::UnknownMacro { layer: id, button, target });
+                    }
+                    _ => {}
                 }
             }
         }

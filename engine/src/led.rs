@@ -14,7 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Action, Button, Config, KEY_COUNT, KeyBinding, LayerId, Source};
+use crate::config::{Action, Button, Config, KEY_COUNT, KeyBinding, LayerId, Source, Toggle};
 use crate::engine::{Engine, KeyLight};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -78,6 +78,7 @@ pub enum Category {
     Modified,
     /// Consumer control (media keys).
     Media,
+    Macro,
     Unbound,
 }
 
@@ -88,6 +89,11 @@ impl Category {
             KeyBinding::Action(Action::Key { mods, .. }) if mods.0 != 0 => Category::Modified,
             KeyBinding::Action(Action::Key { .. }) => Category::Key,
             KeyBinding::Action(Action::Consumer(_)) => Category::Media,
+            KeyBinding::Toggle(Toggle::Latch(a) | Toggle::Repeat { action: a, .. }) => {
+                Category::of(KeyBinding::Action(a))
+            }
+            KeyBinding::Toggle(Toggle::Layer(_)) => Category::LayerKey,
+            KeyBinding::Macro(_) => Category::Macro,
             KeyBinding::None | KeyBinding::Inherit => Category::Unbound,
         }
     }
@@ -99,6 +105,7 @@ pub struct Palette {
     pub key: Color,
     pub modified: Color,
     pub media: Color,
+    pub macro_key: Color,
     pub unbound: Color,
 }
 
@@ -108,6 +115,7 @@ impl Palette {
         key: Color::Inherit,
         modified: Color::Inherit,
         media: Color::Inherit,
+        macro_key: Color::Inherit,
         unbound: Color::Inherit,
     };
 
@@ -116,6 +124,7 @@ impl Palette {
         key: Color::Rgb(Rgb::new(255, 150, 60)),
         modified: Color::Rgb(Rgb::new(170, 0, 255)),
         media: Color::Rgb(Rgb::new(0, 255, 70)),
+        macro_key: Color::Rgb(Rgb::new(255, 210, 0)),
         unbound: Color::Off,
     };
 
@@ -125,6 +134,7 @@ impl Palette {
             Category::Key => self.key,
             Category::Modified => self.modified,
             Category::Media => self.media,
+            Category::Macro => self.macro_key,
             Category::Unbound => self.unbound,
         }
     }
@@ -175,7 +185,8 @@ pub fn key_colors(config: &Config, engine: &Engine) -> [Rgb; KEY_COUNT] {
         let button = Button::key(i as u8).unwrap();
         *color = match engine.key_light(button) {
             KeyLight::Idle => base(config, engine.layer(), button).scale(config.leds.idle_level),
-            KeyLight::Held { pressed_on } => held(config, pressed_on, button),
+            KeyLight::Held { pressed_on } | KeyLight::Running { pressed_on } => held(config, pressed_on, button),
+            KeyLight::Active { pressed_on } => active(config, pressed_on, button),
             KeyLight::PathAnchor { pressed_on } => base(config, pressed_on, button)
                 .scale(config.leds.idle_level)
                 .scale(PATH_ANCHOR_LEVEL),
@@ -227,6 +238,16 @@ fn held(config: &Config, pressed_on: LayerId, button: Button) -> Rgb {
                 HeldStyle::Invert => idle.invert(),
             }
         }
+    }
+}
+
+/// Toggle on: the key's own active color, else its held color.
+fn active(config: &Config, pressed_on: LayerId, button: Button) -> Rgb {
+    let (_, source) = config.resolve_button_source(pressed_on, button);
+    match own_color(config, source, button).map_or(Color::Inherit, |c| c.active) {
+        Color::Rgb(rgb) => rgb,
+        Color::Off => Rgb::BLACK,
+        Color::Inherit => held(config, pressed_on, button),
     }
 }
 
