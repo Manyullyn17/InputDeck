@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- InputDeck: a key deck in front of the layers stacked behind it. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#232a3a"/>
+      <stop offset="1" stop-color="#121621"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <!-- layers -->
+  <rect x="300" y="156" width="560" height="560" rx="92" fill="#4c7dff" opacity="0.28"/>
+  <rect x="232" y="224" width="560" height="560" rx="92" fill="#4c7dff" opacity="0.55"/>
+  <!-- deck -->
+  <rect x="164" y="292" width="560" height="560" rx="92" fill="#2b3346" stroke="#55607a" stroke-width="10"/>
+  <!-- keys: 3x3, 148 wide, 18 gap, 40 margin -->
+  <g fill="#454f66">
+    <rect x="204" y="332" width="148" height="148" rx="30" fill="#ff963c"/>
+    <rect x="370" y="332" width="148" height="148" rx="30"/>
+    <rect x="536" y="332" width="148" height="148" rx="30"/>
+    <rect x="204" y="498" width="148" height="148" rx="30"/>
+    <rect x="370" y="498" width="148" height="148" rx="30" fill="#4c7dff"/>
+    <rect x="536" y="498" width="148" height="148" rx="30"/>
+    <rect x="204" y="664" width="148" height="148" rx="30"/>
+    <rect x="370" y="664" width="148" height="148" rx="30"/>
+    <rect x="536" y="664" width="148" height="148" rx="30" fill="#ffd200"/>
+  </g>
+</svg>

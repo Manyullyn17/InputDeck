@@ -32,6 +32,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Utility",
+    "shortDescription": "Configurator for the InputDeck macropad firmware",
+    "longDescription": "Edit layers, macros and colors for InputDeck, custom firmware for the Adafruit MacroPad RP2040, and sync them to the device."
   }
 }
