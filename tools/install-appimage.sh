@@ -6,7 +6,9 @@
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-id=io.github.manyullyn17.inputdeck
+# Matches the window's Wayland app id (the binary name), not the Tauri
+# identifier; otherwise KDE shows a generic icon on the window.
+id=inputdeck
 bin="$HOME/Applications/InputDeck.AppImage"
 desktop="${XDG_DATA_HOME:-$HOME/.local/share}/applications/$id.desktop"
 icon="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/256x256/apps/$id.png"
