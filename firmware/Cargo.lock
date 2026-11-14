@@ -691,7 +691,6 @@ dependencies = [
  "macropad-engine",
  "panic-halt",
  "smart-leds",
- "usbd-hid",
 ]
 
 [[package]]

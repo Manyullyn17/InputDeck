@@ -2,6 +2,7 @@
 name = "firmware"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 cortex-m = { version = "0.7.10", features = ["inline-asm"] }
@@ -18,7 +19,6 @@ heapless = "0.8"
 macropad-engine = { version = "0.1.0", path = "../engine" }
 panic-halt = "1.0.0"
 smart-leds = "0.4"
-usbd-hid = "0.10.2"
 
 [workspace]
 

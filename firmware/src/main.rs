@@ -19,7 +19,7 @@ mod demo;
 mod display;
 mod input;
 mod keyboard;
-mod mouse;
+mod extras;
 mod serial;
 mod storage;
 mod ui;
@@ -46,11 +46,10 @@ use alloc::string::String;
 use macropad_engine::menu::{Menu, MenuInput, MenuOutcome};
 use macropad_engine::{
     BUTTON_COUNT, Button, Config, Engine, Event, HidState, HostLed, Instant, KEY_COUNT, KeyLight, LayerId,
-    MOUSE_REPORT_LEN, NKRO_REPORT_LEN, Output, SystemAction,
+    NKRO_REPORT_LEN, Output, SystemAction,
 };
 use smart_leds::RGB8;
 use panic_halt as _;
-use usbd_hid::descriptor::{MediaKeyboardReport, SerializedDescriptor};
 
 use display::{Framebuffer, Phase, Screen, Sh1106, Snapshot};
 use ui::MenuScreen;
@@ -131,7 +130,8 @@ async fn main(_spawner: Spawner) {
     let driver = usb::Driver::new(p.USB, Irqs);
     // pid.codes test VID/PID; fine for a personal device.
     let mut usb_config = embassy_usb::Config::new(0x1209, 0x0001);
-    usb_config.manufacturer = Some("Macropad OS");
+    // No manufacturer string: Linux names input devices "<manufacturer>
+    // <product>", which would repeat the name.
     usb_config.product = Some("Macropad OS");
     usb_config.max_power = 100;
     // Composite device (HID + CDC serial) needs interface association.
@@ -145,8 +145,7 @@ async fn main(_spawner: Spawner) {
     let mut control_buf = [0; 64];
     // Declared before the builder so they outlive it.
     let mut keyboard_state = hid::State::new();
-    let mut media_state = hid::State::new();
-    let mut mouse_state = hid::State::new();
+    let mut extras_state = hid::State::new();
     let mut serial_state = cdc_acm::State::new();
     let mut keyboard_handler = keyboard::ProtocolHandler;
     let mut builder = Builder::new(
@@ -171,24 +170,12 @@ async fn main(_spawner: Spawner) {
         },
     );
 
-    let mut media = HidWriter::<_, 2>::new(
+    // Media keys and mouse, by report ID (see extras.rs).
+    let mut extras = HidWriter::<_, 8>::new(
         &mut builder,
-        &mut media_state,
+        &mut extras_state,
         hid::Config {
-            report_descriptor: MediaKeyboardReport::desc(),
-            request_handler: None,
-            poll_ms: 1,
-            max_packet_size: 8,
-            hid_subclass: HidSubclass::No,
-            hid_boot_protocol: HidBootProtocol::None,
-        },
-    );
-
-    let mut mouse = HidWriter::<_, 8>::new(
-        &mut builder,
-        &mut mouse_state,
-        hid::Config {
-            report_descriptor: mouse::DESCRIPTOR,
+            report_descriptor: extras::DESCRIPTOR,
             request_handler: None,
             poll_ms: 1,
             max_packet_size: 8,
@@ -457,15 +444,14 @@ async fn main(_spawner: Spawner) {
                 }
                 let m = hid_state.consumer_report();
                 if m != sent_media {
-                    let _ = media.write(&m.to_le_bytes()).await;
+                    let _ = extras.write(&extras::consumer_report(m)).await;
                     sent_media = m;
                 }
                 // Large scroll amounts are split over several reports.
                 loop {
                     let r = hid_state.take_mouse_report();
                     if r.buttons != sent_mouse_buttons || r.moves() {
-                        let bytes: [u8; MOUSE_REPORT_LEN] = r.to_bytes();
-                        let _ = mouse.write(&bytes).await;
+                        let _ = extras.write(&extras::mouse_report(r)).await;
                         sent_mouse_buttons = r.buttons;
                     }
                     if !hid_state.scroll_pending() {
