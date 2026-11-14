@@ -1,4 +1,4 @@
-//! USB serial endpoint for config tools (see `macropad_engine::protocol`).
+//! USB serial endpoint for config tools (see `inputdeck_engine::protocol`).
 
 use alloc::format;
 use alloc::vec::Vec;
@@ -11,9 +11,9 @@ use embassy_usb::class::cdc_acm::CdcAcmClass;
 use embassy_usb::driver::EndpointError;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::signal::Signal;
-use macropad_engine::Config;
-use macropad_engine::codec::{self, FORMAT_VERSION};
-use macropad_engine::protocol::*;
+use inputdeck_engine::Config;
+use inputdeck_engine::codec::{self, FORMAT_VERSION};
+use inputdeck_engine::protocol::*;
 
 use crate::storage::{StoreError, Storage};
 

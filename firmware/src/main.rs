@@ -1,9 +1,9 @@
-//! Macropad OS firmware for the Adafruit MacroPad RP2040.
+//! InputDeck firmware for the Adafruit MacroPad RP2040.
 //!
 //! Scans keys and encoder, runs the shared engine with the config stored in
 //! flash (or a built-in demo if none is stored), sends USB HID keyboard and
 //! media reports, drives the OLED and key LEDs, and offers a USB serial
-//! port for config tools (`mpcfg`). Uploaded configs apply immediately.
+//! port for config tools (`deckcfg`). Uploaded configs apply immediately.
 //! The red LED is lit whenever a layer other than the base layer is active.
 //!
 //! Hard-wired combos (independent of the config):
@@ -39,12 +39,12 @@ use embassy_time::{Duration, Ticker};
 use embassy_usb::Builder;
 use embassy_usb::class::hid::{self, HidBootProtocol, HidSubclass, HidWriter};
 use heapless::Vec;
-use macropad_engine::led::{self, Rgb};
+use inputdeck_engine::led::{self, Rgb};
 use core::cell::RefCell;
 
 use alloc::string::String;
-use macropad_engine::menu::{Menu, MenuInput, MenuOutcome};
-use macropad_engine::{
+use inputdeck_engine::menu::{Menu, MenuInput, MenuOutcome};
+use inputdeck_engine::{
     BUTTON_COUNT, Button, Config, Engine, Event, HidState, HostLed, Instant, KEY_COUNT, KeyLight, LayerId,
     NKRO_REPORT_LEN, Output, SystemAction,
 };
@@ -132,7 +132,7 @@ async fn main(_spawner: Spawner) {
     let mut usb_config = embassy_usb::Config::new(0x1209, 0x0001);
     // No manufacturer string: Linux names input devices "<manufacturer>
     // <product>", which would repeat the name.
-    usb_config.product = Some("Macropad OS");
+    usb_config.product = Some("InputDeck");
     usb_config.max_power = 100;
     // Composite device (HID + CDC serial) needs interface association.
     usb_config.composite_with_iads = true;

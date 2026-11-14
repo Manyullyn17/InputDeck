@@ -1,4 +1,4 @@
-//! mpcfg: Macropad OS config tool.
+//! deckcfg: InputDeck config tool.
 
 
 use std::fs;
@@ -6,14 +6,14 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
-use macropad_engine::codec::{self, Bundle, FORMAT_VERSION};
-use macropad_engine::{Config, KEY_COUNT, KeyBinding};
+use inputdeck_engine::codec::{self, Bundle, FORMAT_VERSION};
+use inputdeck_engine::{Config, KEY_COUNT, KeyBinding};
 
-use mpcfg::device::Device;
-use mpcfg::{to_toml, toml_config};
+use deckcfg::device::Device;
+use deckcfg::{to_toml, toml_config};
 
 #[derive(Parser)]
-#[command(about = "Macropad OS config tool")]
+#[command(about = "InputDeck config tool")]
 struct Cli {
     /// Serial port of the device (default: find it automatically).
     #[arg(long, global = true)]
@@ -107,7 +107,7 @@ fn main() -> Result<()> {
         Command::Info => {
             let mut dev = Device::open(port)?;
             let info = dev.info()?;
-            println!("Macropad OS: config format v{}, protocol v{}", info.format_version, info.protocol_version);
+            println!("InputDeck: config format v{}, protocol v{}", info.format_version, info.protocol_version);
             match dev.get_config() {
                 Ok(bytes) => {
                     let bundle = codec::decode(&bytes).map_err(|e| anyhow::anyhow!("stored config: {e:?}"))?;

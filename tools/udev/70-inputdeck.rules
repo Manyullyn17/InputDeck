@@ -1,0 +1,6 @@
+# InputDeck: let the logged-in user open the device's USB serial port
+# (used by deckcfg). Install with:
+#   sudo cp tools/udev/70-inputdeck.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload
+# then replug the device.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0001", ATTRS{product}=="InputDeck", TAG+="uaccess"

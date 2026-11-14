@@ -1,17 +1,17 @@
-//! Macropad OS desktop app backend: Tauri commands around the shared
-//! config tooling (`mpcfg`): editing TOML documents, simulating the engine,
+//! InputDeck desktop app backend: Tauri commands around the shared
+//! config tooling (`deckcfg`): editing TOML documents, simulating the engine,
 //! and talking to the device.
 
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use macropad_engine::Config;
-use macropad_engine::codec::{self, Bundle, FORMAT_VERSION};
-use mpcfg::device::Device;
-use mpcfg::document::{ConfigDocument, DocumentView, MacroEdit, SettingValue};
-use mpcfg::sim::{SimState, Simulator};
-use mpcfg::to_toml;
+use inputdeck_engine::Config;
+use inputdeck_engine::codec::{self, Bundle, FORMAT_VERSION};
+use deckcfg::device::Device;
+use deckcfg::document::{ConfigDocument, DocumentView, MacroEdit, SettingValue};
+use deckcfg::sim::{SimState, Simulator};
+use deckcfg::to_toml;
 use serde::Serialize;
 use tauri::State;
 
@@ -474,8 +474,8 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use macropad_engine::Action;
-    use macropad_engine::notation::parse_action;
+    use inputdeck_engine::Action;
+    use inputdeck_engine::notation::parse_action;
 
     #[test]
     fn undo_redo_and_dirty_state() {

@@ -15,8 +15,8 @@
 //! Key 12 has its own colors on L0 (red, yellow while held), which follow
 //! it onto every layer that inherits it.
 
-use macropad_engine::led::{Color, Rgb};
-use macropad_engine::{Action, Button, EncoderBinding, KeyBinding, KeyCode, Layer, LayerId, Modifiers};
+use inputdeck_engine::led::{Color, Rgb};
+use inputdeck_engine::{Action, Button, EncoderBinding, KeyBinding, KeyCode, Layer, LayerId, Modifiers};
 
 const TEAL: Color = Color::Rgb(Rgb::new(0, 255, 180));
 const PINK: Color = Color::Rgb(Rgb::new(255, 40, 140));

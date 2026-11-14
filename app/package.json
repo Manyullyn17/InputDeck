@@ -1,7 +1,7 @@
 {
-  "name": "macropad-app",
+  "name": "inputdeck",
   "version": "0.1.0",
-  "description": "Macropad OS desktop configurator",
+  "description": "InputDeck desktop configurator",
   "type": "module",
   "scripts": {
     "dev": "vite dev",

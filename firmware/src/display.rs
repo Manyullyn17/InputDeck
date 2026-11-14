@@ -19,7 +19,7 @@ use embedded_graphics::text::{Baseline, Text};
 use heapless::Vec;
 use alloc::string::String;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
-use macropad_engine::{BUTTON_COUNT, Button, Config, KEY_COUNT, LayerId, label};
+use inputdeck_engine::{BUTTON_COUNT, Button, Config, KEY_COUNT, LayerId, label};
 
 use crate::ui::MenuScreen;
 

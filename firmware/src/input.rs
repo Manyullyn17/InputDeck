@@ -2,7 +2,7 @@
 
 use embassy_rp::gpio::Input;
 use heapless::Vec;
-use macropad_engine::{BUTTON_COUNT, Button, Direction, Event, KEY_COUNT};
+use inputdeck_engine::{BUTTON_COUNT, Button, Direction, Event, KEY_COUNT};
 
 /// A button's raw state must be stable this many consecutive scans (ms)
 /// before a change is reported.

@@ -2,7 +2,7 @@
 //! fallback.
 //!
 //! The interface describes an NKRO report (modifier byte + one bit per key
-//! code, see `macropad_engine::hid`). It is still marked as a boot keyboard:
+//! code, see `inputdeck_engine::hid`). It is still marked as a boot keyboard:
 //! if the host asks for the boot protocol (BIOS, some KVMs), the firmware
 //! sends the standard 8-byte 6-key report instead.
 
@@ -10,7 +10,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use embassy_usb::class::hid::{HidProtocolMode, ReportId, RequestHandler};
 use embassy_usb::control::OutResponse;
-use macropad_engine::hid::NKRO_KEYS;
+use inputdeck_engine::hid::NKRO_KEYS;
 
 /// Whether the host selected the boot protocol.
 static BOOT_PROTOCOL: AtomicBool = AtomicBool::new(false);

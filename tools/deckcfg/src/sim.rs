@@ -3,9 +3,9 @@
 
 use std::collections::VecDeque;
 
-use macropad_engine::led;
-use macropad_engine::notation::write_action;
-use macropad_engine::{
+use inputdeck_engine::led;
+use inputdeck_engine::notation::write_action;
+use inputdeck_engine::{
     Action, BUTTON_COUNT, Button, Config, Direction, Engine, Event, Instant, KEY_COUNT, KeyBinding, KeyLight,
     MacroId, MacroKind, Output, SystemAction, label,
 };
@@ -256,9 +256,9 @@ mod tests {
         sim.tick(2000);
         let s = sim.state();
         assert!(!s.busy);
-        // The log keeps the most recent entries: "...OS!" then Enter.
+        // The log keeps the most recent entries: "...InputDeck!" then Enter.
         assert_eq!(s.log.len(), LOG_LEN);
         assert_eq!(s.log.last().map(String::as_str), Some("▲ enter"));
-        assert!(s.log.iter().any(|l| l == "▼ shift+o"), "{:?}", s.log);
+        assert!(s.log.iter().any(|l| l == "▼ shift+d"), "{:?}", s.log);
     }
 }

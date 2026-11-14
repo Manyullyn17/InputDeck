@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use macropad_engine::{KeyCode, KeyStroke, Modifiers};
+use inputdeck_engine::{KeyCode, KeyStroke, Modifiers};
 
 const XKB_DIR: &str = "/usr/share/X11/xkb/symbols";
 

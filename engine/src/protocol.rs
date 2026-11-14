@@ -24,6 +24,7 @@ pub const STATUS_STORAGE_ERROR: u8 = 0x03;
 pub const STATUS_NO_CONFIG: u8 = 0x04;
 pub const STATUS_TOO_LARGE: u8 = 0x05;
 
+/// Same bytes as [`crate::codec::MAGIC`] (working title "Macropad OS").
 pub const PING_MAGIC: [u8; 4] = *b"MPOS";
 pub const PROTOCOL_VERSION: u16 = 1;
 pub const FRAME_HEADER_LEN: usize = 5;

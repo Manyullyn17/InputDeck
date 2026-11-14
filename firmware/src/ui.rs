@@ -6,10 +6,10 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 
-use macropad_engine::codec::{self, Bundle, FORMAT_VERSION};
-use macropad_engine::led::{self, Rgb};
-use macropad_engine::menu::{Item, Menu, MenuView, percent_to_level};
-use macropad_engine::{Config, KEY_COUNT};
+use inputdeck_engine::codec::{self, Bundle, FORMAT_VERSION};
+use inputdeck_engine::led::{self, Rgb};
+use inputdeck_engine::menu::{Item, Menu, MenuView, percent_to_level};
+use inputdeck_engine::{Config, KEY_COUNT};
 use smart_leds::RGB8;
 
 use crate::storage::Storage;
@@ -46,7 +46,7 @@ pub fn open_menu(storage: &RefCell<Storage>, config: &Config) -> Menu {
     let b = bundle(storage, config);
     let names = b.profiles.iter().map(|c| c.name.clone()).collect();
     let info = vec![
-        format!("Macropad OS {}", env!("CARGO_PKG_VERSION")),
+        format!("InputDeck {}", env!("CARGO_PKG_VERSION")),
         format!("Config format v{FORMAT_VERSION}"),
         format!("Profile {}/{}", b.active + 1, b.profiles.len()),
         format!("{} layers, {} macros", config.layers.len(), config.macros.len()),

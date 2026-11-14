@@ -1,4 +1,4 @@
-//! Macropad OS transition engine.
+//! InputDeck transition engine.
 //!
 //! Pure logic with no hardware dependencies, shared by the firmware and the
 //! desktop app. Semantics are defined in `meta-layers.md` at the repo root.

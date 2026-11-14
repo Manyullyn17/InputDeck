@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use indexmap::IndexMap;
-use macropad_engine::led::{Color, HeldStyle, KeyColor, LedSettings, Palette};
-use macropad_engine::notation::{parse_action, parse_binding, parse_color, parse_encoder, parse_step};
-use macropad_engine::{
+use inputdeck_engine::led::{Color, HeldStyle, KeyColor, LedSettings, Palette};
+use inputdeck_engine::notation::{parse_action, parse_binding, parse_color, parse_encoder, parse_step};
+use inputdeck_engine::{
     Action, Button, CharKeys, Config, ConfigError, HostLed, IdleSettings, Indicator, KEY_COUNT, KeyStroke, Layer,
     LayerId, Macro, MacroId, MacroKind, MacroTiming, Step, StopMode,
 };
@@ -458,8 +458,8 @@ fn compile_layer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use macropad_engine::led::Rgb;
-    use macropad_engine::{Action, KeyBinding, KeyCode, Modifiers};
+    use inputdeck_engine::led::Rgb;
+    use inputdeck_engine::{Action, KeyBinding, KeyCode, Modifiers};
 
     const DEMO: &str = include_str!("../../../configs/demo.toml");
 

@@ -1,7 +1,7 @@
-# Macropad OS demo config: the meta layer example from the design discussion.
+# InputDeck demo config: the meta layer example from the design discussion.
 #
-# Check:   cargo run -p mpcfg -- check configs/demo.toml
-# Encode:  cargo run -p mpcfg -- encode configs/demo.toml -o demo.bin
+# Check:   cargo run -p deckcfg -- check configs/demo.toml
+# Encode:  cargo run -p deckcfg -- encode configs/demo.toml -o demo.bin
 #
 # Bindings (case-insensitive):
 #   _                 inherit from the parent layer (or nothing on base)
@@ -25,7 +25,7 @@
 # Colors: "#rrggbb", "off", or "_" (inherit).
 #
 # Several files can be uploaded as profiles:
-#   cargo run -p mpcfg -- upload configs/demo.toml configs/numpad.toml
+#   cargo run -p deckcfg -- upload configs/demo.toml configs/numpad.toml
 
 # Profile name, shown when switching profiles.
 name = "Demo"
@@ -138,7 +138,7 @@ colors = { 2 = { active = "#00ff00" } }
 
 [macros.hello]
 name = "Hello"
-steps = ["text:Hello from Macropad OS!", "enter"]
+steps = ["text:Hello from InputDeck!", "enter"]
 
 [macros.ticker]
 name = "Tick"

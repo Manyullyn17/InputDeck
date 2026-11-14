@@ -16,7 +16,7 @@ embassy-usb = { version = "0.6.0", features = ["max-interface-count-8", "max-han
 embedded-alloc = "0.7.0"
 embedded-graphics = "0.8.2"
 heapless = "0.8"
-macropad-engine = { version = "0.1.0", path = "../engine" }
+inputdeck-engine = { version = "0.1.0", path = "../engine" }
 panic-halt = "1.0.0"
 smart-leds = "0.4"
 

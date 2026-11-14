@@ -5,9 +5,9 @@
 //! compiled again, giving an up-to-date [`Config`] or an error message.
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use macropad_engine::led::{self, Category, Rgb};
-use macropad_engine::notation::{parse_binding, parse_encoder, parse_step};
-use macropad_engine::{Button, Config, KEY_COUNT, LayerId, MacroId, label};
+use inputdeck_engine::led::{self, Category, Rgb};
+use inputdeck_engine::notation::{parse_binding, parse_encoder, parse_step};
+use inputdeck_engine::{Button, Config, KEY_COUNT, LayerId, MacroId, label};
 use serde::{Deserialize, Serialize};
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 
@@ -516,7 +516,7 @@ mod tests {
         let mut d = ConfigDocument::parse(DEMO).unwrap();
         d.set_key("one", 4, "ctrl+c").unwrap();
         let text = d.text();
-        assert!(text.contains("# Macropad OS demo config"));
+        assert!(text.contains("# InputDeck demo config"));
         assert!(text.contains("\"ctrl+c\""));
         let v = d.view();
         assert_eq!(v.layers[1].keys[4].label, "C-C");

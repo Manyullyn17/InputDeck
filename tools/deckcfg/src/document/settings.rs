@@ -2,9 +2,9 @@
 //! layer and global palettes, LED/idle/timing settings and the name.
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use macropad_engine::led::{Color, HeldStyle, LedSettings, Palette};
-use macropad_engine::notation::{parse_action, parse_color, write_color};
-use macropad_engine::{Config, IdleSettings, KEY_COUNT, LayerId, MacroTiming};
+use inputdeck_engine::led::{Color, HeldStyle, LedSettings, Palette};
+use inputdeck_engine::notation::{parse_action, parse_color, write_color};
+use inputdeck_engine::{Config, IdleSettings, KEY_COUNT, LayerId, MacroTiming};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 

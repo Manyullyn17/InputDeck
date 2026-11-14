@@ -1,4 +1,4 @@
-//! Writes an engine [`Config`] back as a TOML config file (for `mpcfg pull`).
+//! Writes an engine [`Config`] back as a TOML config file (for `deckcfg pull`).
 //!
 //! Layer and macro ids aren't stored on the device, so they are derived
 //! from names. Everything else is written explicitly, so the output
@@ -7,9 +7,9 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
-use macropad_engine::led::{Color, HeldStyle, KeyColor, Palette};
-use macropad_engine::notation::{write_action, write_binding, write_color, write_step};
-use macropad_engine::{
+use inputdeck_engine::led::{Color, HeldStyle, KeyColor, Palette};
+use inputdeck_engine::notation::{write_action, write_binding, write_color, write_step};
+use inputdeck_engine::{
     Action, Button, Config, EncoderBinding, HostLed, KEY_COUNT, KeyBinding, KeyStroke, MacroKind, StopMode,
 };
 
@@ -102,7 +102,7 @@ pub fn write(config: &Config) -> String {
 
     let mut out = String::new();
     let o = &mut out;
-    writeln!(o, "# Macropad OS config, pulled from the device.").unwrap();
+    writeln!(o, "# InputDeck config, pulled from the device.").unwrap();
     writeln!(o, "# See configs/demo.toml in the repository for the format.\n").unwrap();
     if !config.name.is_empty() {
         writeln!(o, "name = {}\n", quote(&config.name)).unwrap();
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn default_config_roundtrips() {
-        let config = macropad_engine::Config::new(vec![macropad_engine::Layer::empty()]);
+        let config = inputdeck_engine::Config::new(vec![inputdeck_engine::Layer::empty()]);
         let back = parse(&write(&config)).unwrap();
         assert_eq!(back, config);
     }

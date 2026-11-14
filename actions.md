@@ -1,6 +1,6 @@
 # Toggles and Macros
 
-Design discussion (2026-11). Implemented in `engine/src/engine.rs` (runtime); text layouts are resolved by `mpcfg` (`tools/mpcfg/src/layouts.rs`). "Decided" items come from the user; "Proposed" items are suggestions awaiting confirmation; "Open" items are deliberately undecided.
+Design discussion (2026-11). Implemented in `engine/src/engine.rs` (runtime); text layouts are resolved by `deckcfg` (`tools/deckcfg/src/layouts.rs`). "Decided" items come from the user; "Proposed" items are suggestions awaiting confirmation; "Open" items are deliberately undecided.
 
 ## Toggles
 
@@ -61,7 +61,7 @@ LEDs: a running one-shot uses the held color until it finishes; an active toggle
 
 - When a macro stops early (stop immediately, cancel, device reset), every key it is still holding down is released, so nothing gets stuck.
 - **Text needs a keyboard layout.** USB keyboards send key positions, not characters; the computer turns them into characters using its layout. The device cannot query the computer's layout over USB.
-- **Layouts are data, not firmware.** The config carries a character map (character → key press sequence) for exactly the characters used in text steps. `mpcfg` builds it from: built-in `us`/`de`, any XKB layout (`xkb:eu` for EurKEY, `xkb:de(nodeadkeys)`), the active desktop layout (`system`, currently KDE), and per-character `[layout.chars]` overrides. Sequences allow dead keys (`^` = dead circumflex + space, `é` = dead acute + e).
+- **Layouts are data, not firmware.** The config carries a character map (character → key press sequence) for exactly the characters used in text steps. `deckcfg` builds it from: built-in `us`/`de`, any XKB layout (`xkb:eu` for EurKEY, `xkb:de(nodeadkeys)`), the active desktop layout (`system`, currently KDE), and per-character `[layout.chars]` overrides. Sequences allow dead keys (`^` = dead circumflex + space, `é` = dead acute + e).
 
 ### Proposed
 

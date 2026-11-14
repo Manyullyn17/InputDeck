@@ -1,6 +1,0 @@
-# Macropad OS: let the logged-in user open the device's USB serial port
-# (used by mpcfg). Install with:
-#   sudo cp tools/udev/70-macropad-os.rules /etc/udev/rules.d/
-#   sudo udevadm control --reload
-# then replug the device.
-SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0001", ATTRS{product}=="Macropad OS", TAG+="uaccess"

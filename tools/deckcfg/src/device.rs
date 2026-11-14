@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
-use macropad_engine::protocol::*;
+use inputdeck_engine::protocol::*;
 use serialport::{SerialPort, SerialPortType};
 
 const VID: u16 = 0x1209;
@@ -25,7 +25,7 @@ fn find_port() -> Result<String> {
         .into_iter()
         .find(|p| matches!(&p.port_type, SerialPortType::UsbPort(u) if u.vid == VID && u.pid == PID))
         .map(|p| p.port_name)
-        .ok_or_else(|| anyhow!("no Macropad OS device found (is it plugged in and running Macropad OS firmware?)"))
+        .ok_or_else(|| anyhow!("no InputDeck device found (is it plugged in and running InputDeck firmware?)"))
 }
 
 impl Device {

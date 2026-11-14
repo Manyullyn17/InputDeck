@@ -1,6 +1,6 @@
-# Macropad OS — Project Handoff
+# InputDeck — Project Handoff
 
-**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, toggles, macros, NKRO keyboard/media/mouse output, OLED status screen, configurable key LEDs, an onboard settings menu, and multiple profiles. Configs are written in TOML, uploaded over USB with `mpcfg`, and stored in flash.  
+**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, toggles, macros, NKRO keyboard/media/mouse output, OLED status screen, configurable key LEDs, an onboard settings menu, and multiple profiles. Configs are written in TOML, uploaded over USB with `deckcfg`, and stored in flash.  
 **Hardware:** Adafruit MacroPad RP2040  
 **Last updated:** 2026-11-13
 
@@ -8,7 +8,7 @@
 
 ## 1. Project Overview
 
-Macropad OS is a custom software environment for the Adafruit MacroPad RP2040.
+InputDeck is a custom software environment for the Adafruit MacroPad RP2040.
 
 The central idea is to go beyond conventional macropad functionality. Rather than assigning one action to each physical key, it uses a stateful input system with dynamically changing layers, so a small number of physical inputs can represent a much larger set of logical inputs.
 
@@ -63,7 +63,7 @@ firmware/   embassy-rp firmware for the RP2040 (own workspace)
   storage.rs  two alternating config slots at the end of flash
   serial.rs   USB serial endpoint for config tools
   demo.rs     built-in fallback config when nothing is stored
-tools/mpcfg/  host CLI: TOML config -> binary, upload/pull, bootloader
+tools/deckcfg/  host CLI: TOML config -> binary, upload/pull, bootloader
 configs/      example configs (demo.toml documents the format)
 ```
 
@@ -78,22 +78,22 @@ Key principles:
 ### Building and flashing
 
 - Toolchain pinned by `rust-toolchain.toml` (Rust 1.100.0 + `thumbv6m-none-eabi`), installed via rustup.
-- In `firmware/`: `cargo run --release`. The runner (`flash.sh`) asks running firmware to reboot into the bootloader (via `mpcfg`), waits for the drive, mounts it if needed, and flashes with `elf2uf2-rs`. Stored configs survive firmware updates.
+- In `firmware/`: `cargo run --release`. The runner (`flash.sh`) asks running firmware to reboot into the bootloader (via `deckcfg`), waits for the drive, mounts it if needed, and flashes with `elf2uf2-rs`. Stored configs survive firmware updates.
 - Manual bootloader entry: **knob + keys 10 and 12** (hard-wired in firmware, independent of config), or hold the knob while plugging in.
 - Settings menu: **knob + keys 1 and 3** (hard-wired), or a `settings` binding. Keys are soft buttons (Cancel = key 10, Save = key 12); the knob navigates and adjusts.
 - The udev rule in `tools/udev/` gives the logged-in user access to the device's serial port.
 
 ### Configs
 
-- `cargo run -p mpcfg -- check configs/demo.toml` validates a config and points to the exact layer/key on errors.
-- `cargo run -p mpcfg -- upload configs/demo.toml` stores it on the device and applies it immediately.
-- `mpcfg info` shows the stored config; `mpcfg pull -o file.toml` downloads it as TOML (ids are derived from names), `-o file.bin` as binary.
+- `cargo run -p deckcfg -- check configs/demo.toml` validates a config and points to the exact layer/key on errors.
+- `cargo run -p deckcfg -- upload configs/demo.toml` stores it on the device and applies it immediately.
+- `deckcfg info` shows the stored config; `deckcfg pull -o file.toml` downloads it as TOML (ids are derived from names), `-o file.bin` as binary.
 
 ## 5. Confirmed Decisions
 
 | Subject | Decision |
 | --- | --- |
-| Project name | Macropad OS |
+| Project name | InputDeck |
 | Hardware | Adafruit MacroPad RP2040 |
 | Language | Rust; engine shared between firmware and desktop app |
 | Firmware framework | embassy-rp |
@@ -113,7 +113,7 @@ Key principles:
 | Config format | TOML with short binding strings for editing; versioned binary (postcard + CRC) on the device |
 | Config storage | Two alternating flash slots, verified after writing; fallback to built-in demo |
 | Config transfer | USB serial (CDC-ACM) with a small framed protocol |
-| Profiles | Several per device (`mpcfg upload a.toml b.toml`), switched via the menu or `profile:next`/`profile:prev`/`profile:<n>` bindings |
+| Profiles | Several per device (`deckcfg upload a.toml b.toml`), switched via the menu or `profile:next`/`profile:prev`/`profile:<n>` bindings |
 | Onboard settings | Menu for brightness, LEDs, idle, held style, profile, info; changes saved to the active profile |
 | Desktop configuration | Companion application planned, not mandatory |
 | Onboard configuration | Simpler built-in interface planned |
@@ -166,7 +166,7 @@ Key principles:
 
 ## 8. Project Philosophy
 
-The interesting part of Macropad OS isn't having 12 programmable keys. It's exploring how far a small physical input surface can be extended through a more expressive logical input system.
+The interesting part of InputDeck isn't having 12 programmable keys. It's exploring how far a small physical input surface can be extended through a more expressive logical input system.
 
 Meta layers are central to that vision. The desktop app and onboard configuration should make that flexibility accessible without requiring users to reason through every possible state transition.
 

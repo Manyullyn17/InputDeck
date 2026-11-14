@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["engine", "tools/mpcfg", "app/src-tauri"]
+members = ["engine", "tools/deckcfg", "app/src-tauri"]
 # The desktop app needs webkit/GTK; plain `cargo test`/`build` skips it.
-default-members = ["engine", "tools/mpcfg"]
+default-members = ["engine", "tools/deckcfg"]
 # Firmware is its own workspace: it only builds for the RP2040 target.
 exclude = ["firmware"]
 

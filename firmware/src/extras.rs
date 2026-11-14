@@ -9,7 +9,7 @@
 //! The mouse declares X and Y (always 0) so hosts classify it as a pointing
 //! device; without them, Linux/libinput ignores the buttons.
 
-use macropad_engine::{MOUSE_REPORT_LEN, MouseReport};
+use inputdeck_engine::{MOUSE_REPORT_LEN, MouseReport};
 
 const CONSUMER_ID: u8 = 1;
 const MOUSE_ID: u8 = 2;

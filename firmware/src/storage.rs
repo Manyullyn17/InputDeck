@@ -1,7 +1,7 @@
 //! Config storage in two alternating flash slots at the end of flash.
 //!
 //! Each slot holds a sequence number (u32 LE) followed by an encoded config
-//! (see `macropad_engine::codec`). The valid slot with the highest sequence
+//! (see `inputdeck_engine::codec`). The valid slot with the highest sequence
 //! number is active. Saving writes the *other* slot and verifies it before
 //! it counts, so losing power mid-write keeps the previous config.
 
@@ -10,8 +10,8 @@ use alloc::vec::Vec;
 
 use embassy_rp::flash::{Blocking, ERASE_SIZE, Flash};
 use embassy_rp::peripherals::FLASH;
-use macropad_engine::Config;
-use macropad_engine::codec::{self, Bundle, HEADER_LEN};
+use inputdeck_engine::Config;
+use inputdeck_engine::codec::{self, Bundle, HEADER_LEN};
 
 pub const FLASH_SIZE: usize = 8 * 1024 * 1024;
 /// Must match the region excluded from FLASH in memory.x.

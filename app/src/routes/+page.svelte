@@ -85,12 +85,12 @@
   }
 
   async function openFile() {
-    const path = await open({ filters: [{ name: "Macropad OS config", extensions: ["toml"] }] });
+    const path = await open({ filters: [{ name: "InputDeck config", extensions: ["toml"] }] });
     if (typeof path === "string") await report(api.openFile(path));
   }
 
   async function saveAs() {
-    const path = await save({ filters: [{ name: "Macropad OS config", extensions: ["toml"] }], defaultPath: "profile.toml" });
+    const path = await save({ filters: [{ name: "InputDeck config", extensions: ["toml"] }], defaultPath: "profile.toml" });
     if (path) {
       await report(api.saveFile(path));
       flash("Saved");
@@ -211,7 +211,7 @@
 
 <div class="app">
   <header>
-    <div class="brand">Macropad OS</div>
+    <div class="brand">InputDeck</div>
     <button onclick={() => report(api.newFile())}>New</button>
     <button onclick={openFile}>Open…</button>
     <button onclick={saveFile} disabled={!doc}>Save</button>

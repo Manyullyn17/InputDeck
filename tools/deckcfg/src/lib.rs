@@ -1,4 +1,4 @@
-//! Macropad OS config tooling shared by the `mpcfg` CLI and the desktop app:
+//! InputDeck config tooling shared by the `deckcfg` CLI and the desktop app:
 //! the TOML config format, keyboard layouts, and the device connection.
 
 pub mod device;

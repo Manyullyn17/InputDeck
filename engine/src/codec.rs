@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, ConfigError};
 
+/// From the working title "Macropad OS"; kept so stored profiles stay valid.
 pub const MAGIC: [u8; 4] = *b"MPOS";
 pub const FORMAT_VERSION: u16 = 5;
 pub const HEADER_LEN: usize = 16;

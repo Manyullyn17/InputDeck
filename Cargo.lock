@@ -633,6 +633,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "deckcfg"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "indexmap 2.14.2",
+ "inputdeck-engine",
+ "serde",
+ "serde_json",
+ "serialport",
+ "toml 1.2.1+spec-1.1.0",
+ "toml_edit 0.25.19+spec-1.1.0",
+]
+
+[[package]]
 name = "deranged"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1605,6 +1620,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "inputdeck"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "deckcfg",
+ "inputdeck-engine",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+]
+
+[[package]]
+name = "inputdeck-engine"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "io-kit-sys"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1903,28 +1940,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "macropad-app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "macropad-engine",
- "mpcfg",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
-]
-
-[[package]]
-name = "macropad-engine"
-version = "0.1.0"
-dependencies = [
- "postcard",
- "serde",
-]
-
-[[package]]
 name = "markup5ever"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1996,21 +2011,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "mpcfg"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "indexmap 2.14.2",
- "macropad-engine",
- "serde",
- "serde_json",
- "serialport",
- "toml 1.2.1+spec-1.1.0",
- "toml_edit 0.25.19+spec-1.1.0",
 ]
 
 [[package]]
