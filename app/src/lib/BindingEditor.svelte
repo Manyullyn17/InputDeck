@@ -1,7 +1,21 @@
 <script lang="ts">
   import type { LayerView, MacroView } from "./api";
   import KeyPicker from "./KeyPicker.svelte";
-  import { KEY_NAMES, KINDS, MEDIA, MODS, SYSTEM, format, parse, type Binding, type Kind } from "./notation";
+  import {
+    KEY_NAMES,
+    KINDS,
+    MEDIA,
+    MODS,
+    MOUSE_BUTTONS,
+    SCROLL_DIRS,
+    SYSTEM,
+    format,
+    isExtraMouseButton,
+    parse,
+    type Binding,
+    type Kind,
+    type ScrollDir,
+  } from "./notation";
 
   let {
     title,
@@ -15,7 +29,7 @@
     raw: string;
     layers: LayerView[];
     macros: MacroView[];
-    /** Encoder rotation: only keys/media (no layers, toggles, macros). */
+    /** Encoder rotation: only keys/media/mouse (no layers, toggles, macros). */
     actionsOnly?: boolean;
     onapply: (binding: string) => Promise<string | null>;
   } = $props();
@@ -33,7 +47,7 @@
   });
 
   const kinds = $derived(
-    KINDS.filter((k) => !actionsOnly || ["key", "media", "inherit", "none"].includes(k.kind)),
+    KINDS.filter((k) => !actionsOnly || ["key", "media", "mouse", "scroll", "inherit", "none"].includes(k.kind)),
   );
   const hasKey = $derived(["key", "latch", "repeat"].includes(form.kind));
   const changed = $derived(text.trim() !== raw.trim());
@@ -118,6 +132,41 @@
           {#each MEDIA as m}<option value={m.value}>{m.label}</option>{/each}
         </select>
       </label>
+    {:else if form.kind === "mouse"}
+      <label class="row">
+        <span>Button</span>
+        <select value={form.mouse} onchange={(e) => update({ mouse: e.currentTarget.value })}>
+          {#each MOUSE_BUTTONS as m}<option value={m.value}>{m.label}</option>{/each}
+        </select>
+      </label>
+      {#if isExtraMouseButton(form.mouse)}
+        <p class="muted note">
+          Buttons 6–16 work on Linux, but Windows ignores mouse buttons past 5 and app support varies. For shortcuts
+          that work everywhere, F13–F24 keys are a safer choice.
+        </p>
+      {:else}
+        <p class="muted note">Held as long as the key is, so you can drag.</p>
+      {/if}
+    {:else if form.kind === "scroll"}
+      <div class="row">
+        <span>Direction</span>
+        <div class="mods">
+          {#each SCROLL_DIRS as d}
+            <button class="chip" class:on={form.scrollDir === d.value} onclick={() => update({ scrollDir: d.value as ScrollDir })}>{d.label}</button>
+          {/each}
+        </div>
+      </div>
+      <label class="row">
+        <span>Steps</span>
+        <input
+          type="number"
+          min="1"
+          max="255"
+          value={form.scrollSteps}
+          oninput={(e) => update({ scrollSteps: Math.min(255, Math.max(1, parseInt(e.currentTarget.value, 10) || 1)) })}
+        />
+        <span class="unit">{actionsOnly ? "notches per knob click" : "notches per press"}</span>
+      </label>
     {:else if form.kind === "layer" || form.kind === "toggle"}
       <label class="row">
         <span>Layer</span>
@@ -179,6 +228,7 @@
 {#if picking}
   <KeyPicker
     allowMedia={false}
+    allowMouse={false}
     onpick={(name) => {
       const picked = parse(name);
       update({ key: picked.key, mods: picked.mods });
@@ -250,6 +300,9 @@
   }
   .muted {
     margin: 0;
+  }
+  .note {
+    font-size: 12px;
   }
   .error {
     margin: 0;

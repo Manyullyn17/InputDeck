@@ -9,6 +9,8 @@ export type Kind =
   | "none"
   | "key"
   | "media"
+  | "mouse"
+  | "scroll"
   | "layer"
   | "toggle"
   | "latch"
@@ -28,11 +30,20 @@ export interface Binding {
   /** 1-based profile number for the "profile" system function. */
   profile: number;
   interval: number;
+  /** Mouse button: "left", "right", "middle", "back", "forward", "6".."16". */
+  mouse: string;
+  scrollDir: ScrollDir;
+  /** Notches per press (1..255). */
+  scrollSteps: number;
 }
+
+export type ScrollDir = "up" | "down" | "left" | "right";
 
 export const KINDS: { kind: Kind; label: string }[] = [
   { kind: "key", label: "Key" },
   { kind: "media", label: "Media" },
+  { kind: "mouse", label: "Mouse button" },
+  { kind: "scroll", label: "Scroll" },
   { kind: "layer", label: "Hold layer" },
   { kind: "toggle", label: "Toggle layer" },
   { kind: "latch", label: "Latch" },
@@ -54,6 +65,52 @@ export const MEDIA = MEDIA_KEYS.map((k) => ({ value: k.name, label: k.label }));
 /** Other accepted spellings, mapped to the names above. */
 const MEDIA_ALIASES: Record<string, string> = { play: "playpause", volup: "vol+", voldown: "vol-" };
 
+const NAMED_MOUSE = ["left", "right", "middle", "back", "forward"];
+export const MOUSE_BUTTONS = [
+  { value: "left", label: "Left click" },
+  { value: "right", label: "Right click" },
+  { value: "middle", label: "Middle click" },
+  { value: "back", label: "Back (button 4)" },
+  { value: "forward", label: "Forward (button 5)" },
+  ...Array.from({ length: 11 }, (_, i) => ({ value: String(i + 6), label: `Button ${i + 6}` })),
+];
+/** Buttons past 5 work on Linux; other systems may ignore them. */
+export const isExtraMouseButton = (b: string) => !NAMED_MOUSE.includes(b);
+
+export const SCROLL_DIRS: { value: ScrollDir; label: string }[] = [
+  { value: "up", label: "Up" },
+  { value: "down", label: "Down" },
+  { value: "left", label: "Left" },
+  { value: "right", label: "Right" },
+];
+
+/** Canonical mouse button name ("1" → "left"), or null if not a button. */
+function mouseName(b: string): string | null {
+  if (NAMED_MOUSE.includes(b)) return b;
+  const n = /^\d+$/.test(b) ? parseInt(b, 10) : NaN;
+  if (n >= 1 && n <= 5) return NAMED_MOUSE[n - 1];
+  if (n >= 6 && n <= 16) return String(n);
+  return null;
+}
+
+/** Parses "mouse:…" / "scroll:…" action text (lowercase), or null. */
+export function parseMouse(l: string): Pick<Binding, "kind" | "mouse" | "scrollDir" | "scrollSteps"> | null {
+  const m = /^mouse:\s*(\w+)$/.exec(l);
+  const name = m && mouseName(m[1]);
+  if (name) return { kind: "mouse", mouse: name, scrollDir: "down", scrollSteps: 1 };
+  const s = /^scroll:\s*(up|down|left|right)(?::\s*(\d+))?$/.exec(l);
+  if (s) {
+    const steps = s[2] ? parseInt(s[2], 10) : 1;
+    if (steps >= 1 && steps <= 255) return { kind: "scroll", mouse: "left", scrollDir: s[1] as ScrollDir, scrollSteps: steps };
+  }
+  return null;
+}
+
+export function formatMouse(b: Pick<Binding, "kind" | "mouse" | "scrollDir" | "scrollSteps">): string {
+  if (b.kind === "mouse") return `mouse:${b.mouse}`;
+  return b.scrollSteps > 1 ? `scroll:${b.scrollDir}:${b.scrollSteps}` : `scroll:${b.scrollDir}`;
+}
+
 export const SYSTEM = [
   { value: "settings", label: "Open settings menu" },
   { value: "profile", label: "Switch to profile…" },
@@ -67,7 +124,7 @@ export { KEY_NAMES } from "./keys";
 export const DEFAULT_REPEAT_MS = 100;
 
 function empty(kind: Kind): Binding {
-  return { kind, key: "", mods: [], layer: "", macro: "", media: "playpause", system: "settings", profile: 1, interval: DEFAULT_REPEAT_MS };
+  return { kind, key: "", mods: [], layer: "", macro: "", media: "playpause", system: "settings", profile: 1, interval: DEFAULT_REPEAT_MS, mouse: "left", scrollDir: "down", scrollSteps: 1 };
 }
 
 function splitKey(text: string): { key: string; mods: string[] } {
@@ -96,6 +153,8 @@ export function parse(raw: string): Binding {
   if (profile) return { ...empty("system"), system: "profile", profile: parseInt(profile[1], 10) };
   const media = MEDIA_ALIASES[l] ?? l;
   if (MEDIA.some((m) => m.value === media)) return { ...empty("media"), media };
+  const mouse = parseMouse(l);
+  if (mouse) return { ...empty(mouse.kind), ...mouse };
   const prefixed = (p: string) => (t.startsWith(p) ? t.slice(p.length).trim() : null);
   let rest: string | null;
   if ((rest = prefixed("layer:")) !== null) return { ...empty("layer"), layer: rest };
@@ -121,6 +180,8 @@ export function format(b: Binding): string {
     case "none": return "none";
     case "key": return keyText(b);
     case "media": return b.media;
+    case "mouse":
+    case "scroll": return formatMouse(b);
     case "layer": return `layer:${b.layer}`;
     case "toggle": return `toggle:${b.layer}`;
     case "latch": return `latch:${keyText(b)}`;

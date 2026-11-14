@@ -25,7 +25,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   layer_key: "Layer keys",
   key: "Keys",
   modified: "Keys with modifiers",
-  media: "Media keys",
+  media: "Media & mouse",
   macro: "Macros & system",
   unbound: "Unbound keys",
 };

@@ -18,6 +18,8 @@
 #   a, 7, f5, enter, esc, space, tab, backspace, up, left, home, pgup, -, [, ...
 #   ctrl+c, shift+alt+t, gui+space, rctrl+x   keys with modifiers
 #   vol+, vol-, mute, play, next, prev, stop  media keys
+#   mouse:left, mouse:right, mouse:middle, mouse:back, mouse:forward, mouse:6 .. mouse:16  mouse buttons
+#   scroll:up, scroll:down:3, scroll:left, scroll:right  scroll (optional notch count)
 #   0x2c, media:0xb5  raw HID usages
 #
 # Colors: "#rrggbb", "off", or "_" (inherit).

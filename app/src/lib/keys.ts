@@ -13,6 +13,8 @@ export interface KeyGroup {
   title: string;
   keys: KeyEntry[];
   media?: boolean;
+  /** Mouse buttons and scrolling (macro steps only; bindings have their own types). */
+  mouse?: boolean;
   note?: string;
 }
 
@@ -20,8 +22,8 @@ export const KEY_GROUPS: KeyGroup[] = catalog;
 
 const MODIFIER_NAMES = ["ctrl", "shift", "alt", "gui", "rctrl", "rshift", "ralt", "rgui"];
 
-/** Plain key names (no media, no modifiers), for autocomplete. */
-export const KEY_NAMES: string[] = KEY_GROUPS.filter((g) => !g.media)
+/** Plain key names (no media, mouse or modifiers), for autocomplete. */
+export const KEY_NAMES: string[] = KEY_GROUPS.filter((g) => !g.media && !g.mouse)
   .flatMap((g) => g.keys.map((k) => k.name))
   .filter((n) => !MODIFIER_NAMES.includes(n));
 

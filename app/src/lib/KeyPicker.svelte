@@ -3,11 +3,14 @@
 
   let {
     allowMedia = true,
+    allowMouse = true,
     onpick,
     onclose,
   }: {
     /** Offer media/launch keys (fine for macro steps, not for the key field). */
     allowMedia?: boolean;
+    /** Offer mouse buttons and scrolling (macro steps). */
+    allowMouse?: boolean;
     onpick: (name: string) => void;
     onclose: () => void;
   } = $props();
@@ -18,7 +21,7 @@
 
   const groups = $derived.by(() => {
     const q = query.trim().toLowerCase();
-    return KEY_GROUPS.filter((g) => allowMedia || !g.media)
+    return KEY_GROUPS.filter((g) => (allowMedia || !g.media) && (allowMouse || !g.mouse))
       .map((g) => ({
         ...g,
         keys: q ? g.keys.filter((k) => k.name.includes(q) || k.label.toLowerCase().includes(q)) : g.keys,

@@ -16,6 +16,8 @@
 //! | `kp7`, `kpenter`, `nonusbackslash`, `f13`, `undo`, ... | more keys (see `KEYS`) |
 //! | `vol+`, `mute`, `playpause`, `calc`, `browser_back`, ... | a media / launch key (see `MEDIA`) |
 //! | `media:0xb5` | a raw consumer-control usage |
+//! | `mouse:left`, `mouse:right`, `mouse:middle`, `mouse:back`, `mouse:forward`, `mouse:6` ... `mouse:16` | a mouse button |
+//! | `scroll:up`, `scroll:down:3`, `scroll:left`, `scroll:right:2` | scroll by that many notches (default 1) |
 //! | `#rrggbb`, `off`, `_` | colors |
 //!
 //! Macro steps: `down:<action>`, `up:<action>`, `tap:<action>` (or just
@@ -27,7 +29,8 @@ use alloc::string::String;
 use core::fmt::{self, Write};
 
 use crate::config::{
-    Action, EncoderBinding, KeyBinding, KeyCode, LayerId, MacroId, Modifiers, Step, SystemAction, Toggle,
+    Action, EncoderBinding, KeyBinding, KeyCode, LayerId, MacroId, Modifiers, MouseButton, ScrollDir, Step,
+    SystemAction, Toggle,
 };
 
 const SYSTEM: &[(&str, SystemAction)] = &[
@@ -190,6 +193,12 @@ const MEDIA: &[(&str, u16)] = &[
     ("browser_refresh", 0x227),
 ];
 
+/// Named mouse buttons (by index); higher buttons are written by number.
+const MOUSE: &[&str] = &["left", "right", "middle", "back", "forward"];
+
+const SCROLL: &[(&str, ScrollDir)] =
+    &[("up", ScrollDir::Up), ("down", ScrollDir::Down), ("left", ScrollDir::Left), ("right", ScrollDir::Right)];
+
 /// Modifier names; the first name for a bit is canonical.
 const MODS: &[(&str, u8)] = &[
     ("ctrl", 0x01),
@@ -251,6 +260,25 @@ pub fn parse_action(text: &str) -> Result<Action, ParseError> {
     }
     if let Some(raw) = s.strip_prefix("media:") {
         return parse_hex(raw).map(Action::Consumer);
+    }
+    if let Some(b) = s.strip_prefix("mouse:") {
+        let b = b.trim();
+        if let Some(i) = MOUSE.iter().position(|&name| name == b) {
+            return Ok(Action::Mouse(MouseButton(i as u8)));
+        }
+        return match b.parse::<u8>() {
+            Ok(n @ 1..=MouseButton::COUNT) => Ok(Action::Mouse(MouseButton(n - 1))),
+            Ok(_) => Err(ParseError::BadNumber),
+            Err(_) => Err(ParseError::UnknownKey),
+        };
+    }
+    if let Some(rest) = s.strip_prefix("scroll:") {
+        let (dir, steps) = match rest.split_once(':') {
+            Some((d, n)) => (d.trim(), n.trim().parse::<u8>().ok().filter(|&n| n > 0).ok_or(ParseError::BadNumber)?),
+            None => (rest.trim(), 1),
+        };
+        let &(_, dir) = SCROLL.iter().find(|(name, _)| *name == dir).ok_or(ParseError::UnknownKey)?;
+        return Ok(Action::Scroll { dir, steps });
     }
     // A trailing "+" can't be split off as a separator ("ctrl++" is not supported).
     let (mod_part, key_part) = match s.rfind('+') {
@@ -373,6 +401,17 @@ pub fn write_action(w: &mut impl Write, action: Action) -> fmt::Result {
             Some((name, _)) => w.write_str(name),
             None => write!(w, "media:0x{usage:02x}"),
         },
+        Action::Mouse(MouseButton(b)) => match MOUSE.get(b as usize) {
+            Some(name) => write!(w, "mouse:{name}"),
+            None => write!(w, "mouse:{}", b as u16 + 1),
+        },
+        Action::Scroll { dir, steps } => {
+            let (name, _) = SCROLL.iter().find(|&&(_, d)| d == dir).unwrap();
+            match steps {
+                1 => write!(w, "scroll:{name}"),
+                n => write!(w, "scroll:{name}:{n}"),
+            }
+        }
         Action::Key { code, mods } => {
             let mut first = true;
             for bit in (0..8).map(|i| 1u8 << i) {
@@ -517,6 +556,26 @@ mod tests {
     }
 
     #[test]
+    fn parses_mouse() {
+        assert_eq!(parse_action("Mouse:Middle"), Ok(Action::Mouse(MouseButton::MIDDLE)));
+        assert_eq!(parse_action("mouse:2"), Ok(Action::Mouse(MouseButton::RIGHT)));
+        assert_eq!(parse_action("mouse:17"), Err(ParseError::BadNumber));
+        assert_eq!(parse_action("mouse:0"), Err(ParseError::BadNumber));
+        assert_eq!(parse_action("mouse:wheel"), Err(ParseError::UnknownKey));
+        assert_eq!(parse_action("scroll:down:5"), Ok(Action::Scroll { dir: ScrollDir::Down, steps: 5 }));
+        assert_eq!(parse_action("scroll:down:0"), Err(ParseError::BadNumber));
+        assert_eq!(parse_action("scroll:sideways"), Err(ParseError::UnknownKey));
+        assert_eq!(parse_step("down:mouse:left"), Ok(Step::Down(Action::Mouse(MouseButton::LEFT))));
+        assert_eq!(
+            parse_encoder("scroll:up:3"),
+            Ok(EncoderBinding::Action(Action::Scroll { dir: ScrollDir::Up, steps: 3 }))
+        );
+        let mut out = String::new();
+        write_action(&mut out, Action::Mouse(MouseButton(1))).unwrap();
+        assert_eq!(out, "mouse:right");
+    }
+
+    #[test]
     fn parses_toggles_and_macros() {
         let a = key(0x04, 0);
         assert_eq!(binding("toggle:nav"), Ok(KeyBinding::Toggle(Toggle::Layer(LayerId(1)))));
@@ -562,7 +621,7 @@ mod tests {
 
     #[test]
     fn format_parse_roundtrip() {
-        for text in ["a", "0", "f24", "ctrl+shift+t", "rgui+enter", "-", "0x66", "vol+", "playpause", "media:0x183", "kpplus", "ctrl+kpminus", "nonusbackslash", "browser_back", "shift", "ctrl+alt"] {
+        for text in ["a", "0", "f24", "ctrl+shift+t", "rgui+enter", "-", "0x66", "vol+", "playpause", "media:0x183", "kpplus", "ctrl+kpminus", "nonusbackslash", "browser_back", "shift", "ctrl+alt", "mouse:left", "mouse:forward", "mouse:6", "mouse:16", "scroll:up", "scroll:right:3"] {
             let action = parse_action(text).unwrap();
             let mut out = String::new();
             write_action(&mut out, action).unwrap();

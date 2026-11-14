@@ -512,10 +512,12 @@ mod tests {
         let mut count = 0;
         for group in groups.as_array().unwrap() {
             let media = group.get("media").and_then(|m| m.as_bool()).unwrap_or(false);
+            let mouse = group.get("mouse").and_then(|m| m.as_bool()).unwrap_or(false);
             for key in group["keys"].as_array().unwrap() {
                 let name = key["name"].as_str().unwrap();
                 let action = parse_action(name).unwrap_or_else(|e| panic!("{name}: {e}"));
                 assert_eq!(matches!(action, Action::Consumer(_)), media, "{name}");
+                assert_eq!(matches!(action, Action::Mouse(_) | Action::Scroll { .. }), mouse, "{name}");
                 count += 1;
             }
         }

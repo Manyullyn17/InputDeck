@@ -184,7 +184,7 @@
         {:else if row.type === "text"}
           <input class="grow" bind:value={row.value} placeholder="text to type" />
         {:else}
-          <input class="grow mono" list="macro-key-names" bind:value={row.value} placeholder="key, e.g. ctrl+c, shift, f5, vol+" />
+          <input class="grow mono" list="macro-key-names" bind:value={row.value} placeholder="key, e.g. ctrl+c, shift, f5, vol+, mouse:left" />
           <button class="pick" onclick={() => (picking = i)} title="Pick or press a key">⌨</button>
         {/if}
         <div class="row-btns">

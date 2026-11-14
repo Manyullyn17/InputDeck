@@ -9,7 +9,7 @@
 //! own modifiers: while one is down, other held modifiers are suppressed,
 //! so typed text comes out right even while e.g. Shift is held.
 
-use crate::config::{Action, Modifiers};
+use crate::config::{Action, Modifiers, MouseButton, ScrollDir};
 use crate::engine::Output;
 
 /// Standard 6-key-rollover boot keyboard report.
@@ -27,6 +27,30 @@ pub const NKRO_KEYS: usize = 224;
 pub const NKRO_REPORT_LEN: usize = 1 + NKRO_KEYS / 8;
 const CONSUMER_SLOTS: usize = 4;
 
+/// Mouse report: 16 button bits, X and Y (always 0; they make the host treat
+/// the interface as a pointer), vertical wheel, horizontal pan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct MouseReport {
+    pub buttons: u16,
+    pub wheel: i8,
+    pub pan: i8,
+}
+
+pub const MOUSE_REPORT_LEN: usize = 6;
+
+impl MouseReport {
+    pub fn to_bytes(self) -> [u8; MOUSE_REPORT_LEN] {
+        let [lo, hi] = self.buttons.to_le_bytes();
+        [lo, hi, 0, 0, self.wheel as u8, self.pan as u8]
+    }
+
+    /// True if sending this report does something even when the buttons
+    /// haven't changed.
+    pub fn moves(self) -> bool {
+        self.wheel != 0 || self.pan != 0
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct HidState {
     key_counts: [u8; 256],
@@ -37,6 +61,10 @@ pub struct HidState {
     /// Pressed consumer usages in press order; the newest is reported.
     consumer: [u16; CONSUMER_SLOTS],
     consumer_len: usize,
+    mouse_counts: [u8; MouseButton::COUNT as usize],
+    /// Scroll notches not yet sent (positive = up / right).
+    wheel: i16,
+    pan: i16,
 }
 
 fn adjust(counts: &mut [u8; 8], mods: Modifiers, press: bool) {
@@ -63,6 +91,9 @@ impl HidState {
             typed_down: 0,
             consumer: [0; CONSUMER_SLOTS],
             consumer_len: 0,
+            mouse_counts: [0; MouseButton::COUNT as usize],
+            wheel: 0,
+            pan: 0,
         }
     }
 
@@ -91,6 +122,26 @@ impl HidState {
                     self.consumer_len -= 1;
                 }
             }
+            Output::Press(Action::Mouse(MouseButton(b))) => {
+                if let Some(c) = self.mouse_counts.get_mut(b as usize) {
+                    *c = c.saturating_add(1);
+                }
+            }
+            Output::Release(Action::Mouse(MouseButton(b))) => {
+                if let Some(c) = self.mouse_counts.get_mut(b as usize) {
+                    *c = c.saturating_sub(1);
+                }
+            }
+            Output::Press(Action::Scroll { dir, steps }) => {
+                let n = steps as i16;
+                match dir {
+                    ScrollDir::Up => self.wheel = self.wheel.saturating_add(n),
+                    ScrollDir::Down => self.wheel = self.wheel.saturating_sub(n),
+                    ScrollDir::Right => self.pan = self.pan.saturating_add(n),
+                    ScrollDir::Left => self.pan = self.pan.saturating_sub(n),
+                }
+            }
+            Output::Release(Action::Scroll { .. }) => {}
             Output::TypePress { code, mods } => {
                 let c = &mut self.typed_counts[code.0 as usize];
                 *c = c.saturating_add(1);
@@ -161,6 +212,27 @@ impl HidState {
             n => self.consumer[n - 1],
         }
     }
+
+    /// The next mouse report: held buttons plus as much pending scroll as
+    /// fits in one report (which is then no longer pending). Keep sending
+    /// while [`HidState::scroll_pending`] is true.
+    pub fn take_mouse_report(&mut self) -> MouseReport {
+        let mut buttons = 0u16;
+        for (bit, &count) in self.mouse_counts.iter().enumerate() {
+            if count > 0 {
+                buttons |= 1 << bit;
+            }
+        }
+        let wheel = self.wheel.clamp(-127, 127);
+        let pan = self.pan.clamp(-127, 127);
+        self.wheel -= wheel;
+        self.pan -= pan;
+        MouseReport { buttons, wheel: wheel as i8, pan: pan as i8 }
+    }
+
+    pub fn scroll_pending(&self) -> bool {
+        self.wheel != 0 || self.pan != 0
+    }
 }
 
 #[cfg(test)]
@@ -230,6 +302,26 @@ mod tests {
         }
         // The boot report can't hold 12 keys.
         assert_eq!(h.keyboard_report().keys, [ERROR_ROLLOVER; 6]);
+    }
+
+    #[test]
+    fn mouse_buttons_are_refcounted_and_scroll_drains() {
+        let mut h = HidState::new();
+        let right = Action::Mouse(MouseButton::RIGHT);
+        h.apply(Output::Press(right));
+        h.apply(Output::Press(right));
+        h.apply(Output::Press(Action::Mouse(MouseButton(15))));
+        h.apply(Output::Release(right));
+        assert_eq!(h.take_mouse_report(), MouseReport { buttons: 0x8002, wheel: 0, pan: 0 });
+        h.apply(Output::Press(Action::Scroll { dir: ScrollDir::Down, steps: 200 }));
+        h.apply(Output::Press(Action::Scroll { dir: ScrollDir::Left, steps: 3 }));
+        h.apply(Output::Release(Action::Scroll { dir: ScrollDir::Down, steps: 200 }));
+        let r = h.take_mouse_report();
+        assert_eq!((r.wheel, r.pan), (-127, -3));
+        assert!(h.scroll_pending());
+        assert_eq!(h.take_mouse_report().wheel, -73);
+        assert!(!h.scroll_pending());
+        assert_eq!(h.take_mouse_report().to_bytes(), [0x02, 0x80, 0, 0, 0, 0]);
     }
 
     #[test]

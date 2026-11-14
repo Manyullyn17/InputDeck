@@ -3,7 +3,9 @@
 
 use core::fmt::{self, Write};
 
-use crate::config::{Action, Config, KeyBinding, KeyCode, LayerId, Modifiers, SystemAction, Toggle};
+use crate::config::{
+    Action, Config, KeyBinding, KeyCode, LayerId, Modifiers, MouseButton, ScrollDir, SystemAction, Toggle,
+};
 
 /// Writes a short label for an effective (already resolved) binding:
 /// `>Name` hold layer, `^Name` layer toggle, `~A` latch, `*A` repeat,
@@ -75,6 +77,27 @@ pub fn write_action(w: &mut impl Write, action: Action) -> fmt::Result {
             Some(name) => w.write_str(name),
             None => write!(w, "c{usage:X}"),
         },
+        Action::Mouse(MouseButton(b)) => match b {
+            0 => w.write_str("LClk"),
+            1 => w.write_str("RClk"),
+            2 => w.write_str("MClk"),
+            3 => w.write_str("MBack"),
+            4 => w.write_str("MFwd"),
+            _ => write!(w, "M{}", b as u16 + 1),
+        },
+        Action::Scroll { dir, steps } => {
+            let arrow = match dir {
+                ScrollDir::Up => "ScrUp",
+                ScrollDir::Down => "ScrDn",
+                ScrollDir::Left => "ScrL",
+                ScrollDir::Right => "ScrR",
+            };
+            w.write_str(arrow)?;
+            if steps > 1 {
+                write!(w, "{steps}")?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -246,5 +269,8 @@ mod tests {
         assert_eq!(label(KeyBinding::Macro(MacroId(0))), "Hi");
         assert_eq!(label(KeyBinding::None), "");
         assert_eq!(label(KeyBinding::System(SystemAction::Profile(1))), "Prof2");
+        assert_eq!(label(KeyBinding::Action(Action::Mouse(MouseButton::LEFT))), "LClk");
+        assert_eq!(label(KeyBinding::Action(Action::Mouse(MouseButton(8)))), "M9");
+        assert_eq!(label(KeyBinding::Action(Action::Scroll { dir: ScrollDir::Down, steps: 3 })), "ScrDn3");
     }
 }

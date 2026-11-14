@@ -763,6 +763,93 @@
   "note": "Launch keys open whatever your desktop has assigned to them."
  },
  {
+  "title": "Mouse",
+  "mouse": true,
+  "keys": [
+   {
+    "name": "mouse:left",
+    "label": "Left click"
+   },
+   {
+    "name": "mouse:right",
+    "label": "Right click"
+   },
+   {
+    "name": "mouse:middle",
+    "label": "Middle click"
+   },
+   {
+    "name": "mouse:back",
+    "label": "Back"
+   },
+   {
+    "name": "mouse:forward",
+    "label": "Forward"
+   },
+   {
+    "name": "mouse:6",
+    "label": "Button 6"
+   },
+   {
+    "name": "mouse:7",
+    "label": "Button 7"
+   },
+   {
+    "name": "mouse:8",
+    "label": "Button 8"
+   },
+   {
+    "name": "mouse:9",
+    "label": "Button 9"
+   },
+   {
+    "name": "mouse:10",
+    "label": "Button 10"
+   },
+   {
+    "name": "mouse:11",
+    "label": "Button 11"
+   },
+   {
+    "name": "mouse:12",
+    "label": "Button 12"
+   },
+   {
+    "name": "mouse:13",
+    "label": "Button 13"
+   },
+   {
+    "name": "mouse:14",
+    "label": "Button 14"
+   },
+   {
+    "name": "mouse:15",
+    "label": "Button 15"
+   },
+   {
+    "name": "mouse:16",
+    "label": "Button 16"
+   },
+   {
+    "name": "scroll:up",
+    "label": "Scroll up"
+   },
+   {
+    "name": "scroll:down",
+    "label": "Scroll down"
+   },
+   {
+    "name": "scroll:left",
+    "label": "Scroll left"
+   },
+   {
+    "name": "scroll:right",
+    "label": "Scroll right"
+   }
+  ],
+  "note": "Buttons 6–16 work on Linux; Windows ignores buttons past 5. Add a count to scroll further per step, e.g. scroll:down:3."
+ },
+ {
   "title": "Edit commands",
   "keys": [
    {

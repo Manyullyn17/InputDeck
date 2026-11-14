@@ -76,6 +76,33 @@ pub enum Action {
     Key { code: KeyCode, mods: Modifiers },
     /// A consumer-control usage (media keys, volume, ...).
     Consumer(u16),
+    /// A mouse button, held while the action is.
+    Mouse(MouseButton),
+    /// Turn the scroll wheel by `steps` notches when pressed; releasing does
+    /// nothing.
+    Scroll { dir: ScrollDir, steps: u8 },
+}
+
+/// Mouse button index: 0 = left, 1 = right, 2 = middle, 3 = back,
+/// 4 = forward, then further buttons up to [`MouseButton::COUNT`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MouseButton(pub u8);
+
+impl MouseButton {
+    pub const COUNT: u8 = 16;
+    pub const LEFT: MouseButton = MouseButton(0);
+    pub const RIGHT: MouseButton = MouseButton(1);
+    pub const MIDDLE: MouseButton = MouseButton(2);
+    pub const BACK: MouseButton = MouseButton(3);
+    pub const FORWARD: MouseButton = MouseButton(4);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScrollDir {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 /// What a button means on a given layer.

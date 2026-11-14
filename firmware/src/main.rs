@@ -19,6 +19,7 @@ mod demo;
 mod display;
 mod input;
 mod keyboard;
+mod mouse;
 mod serial;
 mod storage;
 mod ui;
@@ -45,7 +46,7 @@ use alloc::string::String;
 use macropad_engine::menu::{Menu, MenuInput, MenuOutcome};
 use macropad_engine::{
     BUTTON_COUNT, Button, Config, Engine, Event, HidState, HostLed, Instant, KEY_COUNT, KeyLight, LayerId,
-    NKRO_REPORT_LEN, Output, SystemAction,
+    MOUSE_REPORT_LEN, NKRO_REPORT_LEN, Output, SystemAction,
 };
 use smart_leds::RGB8;
 use panic_halt as _;
@@ -145,6 +146,7 @@ async fn main(_spawner: Spawner) {
     // Declared before the builder so they outlive it.
     let mut keyboard_state = hid::State::new();
     let mut media_state = hid::State::new();
+    let mut mouse_state = hid::State::new();
     let mut serial_state = cdc_acm::State::new();
     let mut keyboard_handler = keyboard::ProtocolHandler;
     let mut builder = Builder::new(
@@ -174,6 +176,19 @@ async fn main(_spawner: Spawner) {
         &mut media_state,
         hid::Config {
             report_descriptor: MediaKeyboardReport::desc(),
+            request_handler: None,
+            poll_ms: 1,
+            max_packet_size: 8,
+            hid_subclass: HidSubclass::No,
+            hid_boot_protocol: HidBootProtocol::None,
+        },
+    );
+
+    let mut mouse = HidWriter::<_, 8>::new(
+        &mut builder,
+        &mut mouse_state,
+        hid::Config {
+            report_descriptor: mouse::DESCRIPTOR,
             request_handler: None,
             poll_ms: 1,
             max_packet_size: 8,
@@ -281,6 +296,7 @@ async fn main(_spawner: Spawner) {
         // Last keyboard report sent, in whichever protocol was active.
         let mut sent_keyboard: heapless::Vec<u8, NKRO_REPORT_LEN> = heapless::Vec::new();
         let mut sent_media = 0u16;
+        let mut sent_mouse_buttons = 0u16;
         let mut ticker = Ticker::every(Duration::from_millis(1));
         let mut last_activity = embassy_time::Instant::now();
         let mut current_phase = Phase::Active;
@@ -443,6 +459,18 @@ async fn main(_spawner: Spawner) {
                 if m != sent_media {
                     let _ = media.write(&m.to_le_bytes()).await;
                     sent_media = m;
+                }
+                // Large scroll amounts are split over several reports.
+                loop {
+                    let r = hid_state.take_mouse_report();
+                    if r.buttons != sent_mouse_buttons || r.moves() {
+                        let bytes: [u8; MOUSE_REPORT_LEN] = r.to_bytes();
+                        let _ = mouse.write(&bytes).await;
+                        sent_mouse_buttons = r.buttons;
+                    }
+                    if !hid_state.scroll_pending() {
+                        break;
+                    }
                 }
             }
             if screen_dirty {

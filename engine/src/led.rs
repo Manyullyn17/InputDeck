@@ -76,7 +76,7 @@ pub enum Category {
     Key,
     /// A key with modifiers (shortcuts).
     Modified,
-    /// Consumer control (media keys).
+    /// Consumer control (media keys) and mouse buttons / scrolling.
     Media,
     Macro,
     Unbound,
@@ -88,7 +88,8 @@ impl Category {
             KeyBinding::Layer(_) => Category::LayerKey,
             KeyBinding::Action(Action::Key { mods, .. }) if mods.0 != 0 => Category::Modified,
             KeyBinding::Action(Action::Key { .. }) => Category::Key,
-            KeyBinding::Action(Action::Consumer(_)) => Category::Media,
+            // Mouse bindings share the media color.
+            KeyBinding::Action(Action::Consumer(_) | Action::Mouse(_) | Action::Scroll { .. }) => Category::Media,
             KeyBinding::Toggle(Toggle::Latch(a) | Toggle::Repeat { action: a, .. }) => {
                 Category::of(KeyBinding::Action(a))
             }

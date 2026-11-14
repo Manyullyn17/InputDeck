@@ -1,6 +1,6 @@
 # Macropad OS — Project Handoff
 
-**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, toggles, macros, NKRO keyboard/media output, OLED status screen, configurable key LEDs, an onboard settings menu, and multiple profiles. Configs are written in TOML, uploaded over USB with `mpcfg`, and stored in flash.  
+**Project status:** Working prototype. Firmware runs on the device with the meta layer engine, toggles, macros, NKRO keyboard/media/mouse output, OLED status screen, configurable key LEDs, an onboard settings menu, and multiple profiles. Configs are written in TOML, uploaded over USB with `mpcfg`, and stored in flash.  
 **Hardware:** Adafruit MacroPad RP2040  
 **Last updated:** 2026-11-13
 
@@ -102,7 +102,7 @@ Key principles:
 | Fallthrough | Fixed parent per layer; passes down actions only, not layer keys |
 | Global keys | Apply where the current layer inherits; explicit bindings win |
 | Held keys | Keep their original action until released |
-| USB output | NKRO keyboard (bitmap, any number of keys) with 6KRO boot-protocol fallback + consumer control (media keys) |
+| USB output | NKRO keyboard (bitmap, any number of keys) with 6KRO boot-protocol fallback + consumer control (media keys) + mouse (16 buttons, wheel, horizontal pan) |
 | OLED | Layer path header + 4×3 grid of effective bindings, held keys inverted |
 | Key LEDs | Configurable per key / per layer / globally; see [leds.md](leds.md) |
 | Lock indicators | Configurable keys light up for Caps/Num/Scroll Lock; OLED shows CAPS |
